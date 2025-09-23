@@ -1,0 +1,984 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Excel CSV映射工具
+自動識別Excel中的特定欄位和空格，建立映射
+"""
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+import csv
+import json
+import os
+import platform
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
+
+# 根據平台導入
+if platform.system() == "Windows":
+    try:
+        import win32com.client
+        WINDOWS_COM_AVAILABLE = True
+    except ImportError:
+        WINDOWS_COM_AVAILABLE = False
+elif platform.system() == "Darwin":
+    try:
+        from appscript import app
+        MACOS_APPSCRIPT_AVAILABLE = True
+    except ImportError:
+        MACOS_APPSCRIPT_AVAILABLE = False
+else:
+    WINDOWS_COM_AVAILABLE = False
+    MACOS_APPSCRIPT_AVAILABLE = False
+
+class SmartExcelMapper:
+    """Excel映射工具"""
+
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Excel CSV映射工具")
+        self.root.geometry("1400x800")
+
+        # 數據存儲
+        self.csv_data = []
+        self.excel_data = []
+        self.excel_workbook = None
+        self.excel_sheet = None
+        self.active_workbook = None
+        self.active_worksheet = None
+
+        # Excel連接模式
+        self.auto_detect_mode = True  # 預設使用自動偵測
+
+        # 映射配置
+        self.field_mappings = {}  # 存儲不同欄位的映射配置
+        self.current_field = None
+        self.empty_cells = []  # 當前欄位的空格
+
+        self.setup_ui()
+        self.load_configs()
+
+        # 啟動時自動嘗試連接Excel
+        self.root.after(500, self.auto_connect_excel)
+
+        # 定期檢查Excel連接狀態
+        self.start_excel_monitoring()
+
+    def setup_ui(self):
+        """設置界面"""
+        # 主框架
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # =================== 頂部控制區 ===================
+        control_frame = ttk.LabelFrame(main_frame, text="控制面板", padding=10)
+        control_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # 文件操作行
+        file_row = ttk.Frame(control_frame)
+        file_row.pack(fill=tk.X, pady=(0, 5))
+
+        self.csv_btn = ttk.Button(file_row, text="載入CSV", command=self.load_csv, width=12)
+        self.csv_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        # Excel連接模式切換
+        mode_frame = ttk.Frame(file_row)
+        mode_frame.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.mode_var = tk.BooleanVar(value=True)  # True=自動偵測, False=手動選取
+        self.auto_radio = ttk.Radiobutton(mode_frame, text="自動偵測", variable=self.mode_var,
+                                         value=True, command=self.toggle_connection_mode)
+        self.auto_radio.pack(side=tk.LEFT)
+
+        self.manual_radio = ttk.Radiobutton(mode_frame, text="手動選取", variable=self.mode_var,
+                                           value=False, command=self.toggle_connection_mode)
+        self.manual_radio.pack(side=tk.LEFT, padx=(10, 0))
+
+        # 手動連接按鈕（初始隱藏）
+        self.manual_connect_btn = ttk.Button(file_row, text="連接Excel", command=self.connect_excel, width=12)
+
+        self.excel_status = ttk.Label(file_row, text="正在嘗試連接Excel...", foreground="orange")
+        self.excel_status.pack(side=tk.LEFT, padx=(10, 0))
+
+        # 欄位識別行
+        field_row = ttk.Frame(control_frame)
+        field_row.pack(fill=tk.X, pady=(0, 5))
+
+        ttk.Label(field_row, text="目標欄位:").pack(side=tk.LEFT)
+        self.field_var = tk.StringVar(value="化學後孔壁厚度*")
+        field_entry = ttk.Entry(field_row, textvariable=self.field_var, width=20)
+        field_entry.pack(side=tk.LEFT, padx=(5, 10))
+
+        ttk.Button(field_row, text="掃描空格", command=self.scan_empty_cells, width=15).pack(side=tk.LEFT, padx=(0, 20))
+
+        # 執行按鈕
+        ttk.Button(field_row, text="執行映射", command=self.execute_smart_mapping, width=12).pack(side=tk.RIGHT)
+
+        # =================== 主工作區 ===================
+        work_frame = ttk.Frame(main_frame)
+        work_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 左側：CSV選擇區
+        csv_frame = ttk.LabelFrame(work_frame, text="CSV數據 (選擇Elements)", padding=5)
+        csv_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+
+        # CSV表格
+        csv_table_frame = ttk.Frame(csv_frame)
+        csv_table_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 建立Treeview表格
+        self.csv_tree = ttk.Treeview(csv_table_frame, selectmode="extended", height=25)
+        csv_scroll_y = ttk.Scrollbar(csv_table_frame, orient=tk.VERTICAL, command=self.csv_tree.yview)
+        csv_scroll_x = ttk.Scrollbar(csv_table_frame, orient=tk.HORIZONTAL, command=self.csv_tree.xview)
+        self.csv_tree.configure(yscrollcommand=csv_scroll_y.set, xscrollcommand=csv_scroll_x.set)
+
+        # 綁定點擊事件，實現單擊切換選取狀態
+        self.csv_tree.bind('<Button-1>', self.on_tree_click)
+
+        # 設定表格欄位
+        self.csv_tree['columns'] = ('Element', 'Dev', 'Actual', 'Value')
+        self.csv_tree['show'] = 'headings'
+
+        # 設定欄位標題和寬度
+        self.csv_tree.heading('Element', text='Element')
+        self.csv_tree.heading('Dev', text='Dev')
+        self.csv_tree.heading('Actual', text='Actual')
+        self.csv_tree.heading('Value', text='使用值')
+
+        self.csv_tree.column('Element', width=200, minwidth=150)
+        self.csv_tree.column('Dev', width=80, minwidth=60, anchor='center')
+        self.csv_tree.column('Actual', width=80, minwidth=60, anchor='center')
+        self.csv_tree.column('Value', width=80, minwidth=60, anchor='center')
+
+        self.csv_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        csv_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        csv_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # 選取數量顯示
+        csv_info_frame = ttk.Frame(csv_frame)
+        csv_info_frame.pack(fill=tk.X, pady=(5, 0))
+
+        self.csv_selection_label = ttk.Label(csv_info_frame, text="已選取: 0 個元素", font=('Arial', 10, 'bold'))
+        self.csv_selection_label.pack(anchor=tk.W)
+
+        # 使用說明
+        csv_help_label = ttk.Label(csv_info_frame, text="操作說明: 點擊選取項目，再次點擊取消選取", font=('Arial', 8), foreground="gray")
+        csv_help_label.pack(anchor=tk.W)
+
+        # 綁定選取事件
+        self.csv_tree.bind('<<TreeviewSelect>>', self.update_selection_info)
+
+        # 右側：映射配置區
+        mapping_frame = ttk.LabelFrame(work_frame, text="映射配置與狀態", padding=5)
+        mapping_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
+
+        # 狀態顯示區
+        status_frame = ttk.LabelFrame(mapping_frame, text="映射狀態", padding=5)
+        status_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # 空格數量顯示
+        self.spaces_count_label = ttk.Label(status_frame, text="找到空格: 0 個", font=('Arial', 10, 'bold'))
+        self.spaces_count_label.pack(anchor=tk.W, pady=(0, 5))
+
+        # 匹配狀態顯示
+        self.match_status_label = ttk.Label(status_frame, text="數量不匹配", foreground="orange", font=('Arial', 10, 'bold'))
+        self.match_status_label.pack(anchor=tk.W)
+
+        # 空格信息詳細顯示
+        info_frame = ttk.LabelFrame(mapping_frame, text="空格位置詳細", padding=5)
+        info_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+
+        self.empty_cells_info = tk.Text(info_frame, height=15, wrap=tk.WORD, font=('Consolas', 9))
+        info_scroll = ttk.Scrollbar(info_frame, orient=tk.VERTICAL, command=self.empty_cells_info.yview)
+        self.empty_cells_info.configure(yscrollcommand=info_scroll.set)
+
+        self.empty_cells_info.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        info_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 配置管理
+        config_frame = ttk.LabelFrame(mapping_frame, text="配置管理", padding=5)
+        config_frame.pack(fill=tk.X, pady=(10, 0))
+
+        ttk.Label(config_frame, text="配置名稱:").pack(anchor=tk.W)
+        self.config_var = tk.StringVar()
+        self.config_combo = ttk.Combobox(config_frame, textvariable=self.config_var, width=25)
+        self.config_combo.pack(fill=tk.X, pady=(0, 5))
+
+        button_frame = ttk.Frame(config_frame)
+        button_frame.pack(fill=tk.X)
+        ttk.Button(button_frame, text="保存", command=self.save_config, width=8).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="載入", command=self.load_config, width=8).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="刪除", command=self.delete_config, width=8).pack(side=tk.LEFT)
+
+    def load_csv(self):
+        """載入CSV文件"""
+        file_path = filedialog.askopenfilename(
+            title="選擇CSV文件",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+
+        if file_path:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    self.csv_data = list(reader)
+
+                self.display_csv_data()
+
+                # 如果有選中的配置，自動應用
+                current_config = self.config_var.get().strip()
+                if (current_config and
+                    current_config in self.field_mappings and
+                    'selected_elements' in self.field_mappings[current_config]):
+                    self.auto_select_elements(self.field_mappings[current_config]['selected_elements'])
+
+                # 移除CSV載入成功的彈出視窗
+
+            except Exception as e:
+                messagebox.showerror("錯誤", f"載入CSV失敗：{str(e)}")
+
+    def display_csv_data(self):
+        """顯示CSV數據"""
+        # 清除舊數據
+        for item in self.csv_tree.get_children():
+            self.csv_tree.delete(item)
+
+        if not self.csv_data:
+            return
+
+        for i, row in enumerate(self.csv_data):
+            element = row.get('Element', f'行{i+1}')
+            dev = row.get('Dev', '')
+            actual = row.get('Actual', '')
+
+            # 決定使用哪個值（Dev優先，沒有則用Actual）
+            use_value = ""
+            if dev and str(dev).strip() and str(dev).strip().lower() != 'n/a':
+                use_value = str(dev).strip()
+            elif actual and str(actual).strip() and str(actual).strip().lower() != 'n/a':
+                use_value = str(actual).strip()
+
+            # 顯示格式化的值
+            dev_display = str(dev) if dev and str(dev).strip() else '-'
+            actual_display = str(actual) if actual and str(actual).strip() else '-'
+            value_display = use_value if use_value else '-'
+
+            self.csv_tree.insert('', 'end', values=(element, dev_display, actual_display, value_display))
+
+    def on_tree_click(self, event):
+        """處理Treeview點擊事件，實現單擊切換選取"""
+        # 獲取點擊的項目
+        item = self.csv_tree.identify_row(event.y)
+
+        if item:
+            # 獲取目前選取的項目
+            current_selection = self.csv_tree.selection()
+
+            # 如果項目已被選取，則取消選取；否則加入選取
+            if item in current_selection:
+                # 取消選取這個項目
+                new_selection = [i for i in current_selection if i != item]
+            else:
+                # 加入選取
+                new_selection = list(current_selection) + [item]
+
+            # 更新選取狀態
+            self.csv_tree.selection_set(new_selection)
+
+            # 阻止預設的選取行為
+            return "break"
+
+        # 延遲更新顯示，確保選取狀態已更新
+        self.csv_tree.after(10, self.update_selection_info)
+
+    def update_selection_info(self, event=None):
+        """更新選取信息"""
+        selected_count = len(self.csv_tree.selection())
+        self.csv_selection_label.config(text=f"已選取: {selected_count} 個元素")
+
+        # 更新匹配狀態
+        self.update_match_status()
+
+    def update_match_status(self):
+        """更新匹配狀態顯示"""
+        selected_count = len(self.csv_tree.selection())
+        spaces_count = len(self.empty_cells)
+
+        if spaces_count == 0:
+            self.match_status_label.config(text="請先掃描空格", foreground="orange")
+        elif selected_count == spaces_count and selected_count > 0:
+            self.match_status_label.config(text="數量匹配，可以執行", foreground="green")
+        elif selected_count == 0:
+            self.match_status_label.config(text="請選擇CSV元素", foreground="orange")
+        else:
+            self.match_status_label.config(text=f"數量不匹配 ({selected_count}/{spaces_count})", foreground="red")
+
+    def get_excel_column_name(self, col_index):
+        """將數字索引轉換為Excel列名（A, B, ..., Z, AA, AB, ...）"""
+        column_name = ""
+        while col_index >= 0:
+            column_name = chr(65 + (col_index % 26)) + column_name
+            col_index = col_index // 26 - 1
+        return column_name
+
+    def auto_connect_excel(self):
+        """啟動時自動連接Excel（靜默模式）"""
+        try:
+            system = platform.system()
+
+            if system == "Windows" and WINDOWS_COM_AVAILABLE:
+                excel_app = win32com.client.GetActiveObject("Excel.Application")
+                self.active_workbook = excel_app.ActiveWorkbook
+                self.active_worksheet = excel_app.ActiveSheet
+
+                if self.active_workbook:
+                    workbook_name = self.active_workbook.Name
+                    self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
+                    self.load_excel_data()
+                else:
+                    raise Exception("沒有開啟的工作簿")
+
+            elif system == "Darwin" and MACOS_APPSCRIPT_AVAILABLE:
+                excel = app('Microsoft Excel')
+                self.active_workbook = excel.active_workbook
+                self.active_worksheet = excel.active_sheet
+
+                workbook_name = self.active_workbook.name.get()
+                self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
+                self.load_excel_data()
+
+        except:
+            # 靜默失敗，在自動模式下顯示等待狀態
+            if self.auto_detect_mode:
+                self.excel_status.config(text="等待Excel開啟...", foreground="orange")
+            else:
+                self.excel_status.config(text="未連接Excel", foreground="red")
+
+    def start_excel_monitoring(self):
+        """開始監控Excel狀態"""
+        self.monitor_excel()
+
+    def monitor_excel(self):
+        """定期監控Excel連接狀態（僅在自動偵測模式下）"""
+        # 只在自動偵測模式下執行監控
+        if not self.auto_detect_mode:
+            # 如果不是自動偵測模式，3秒後再檢查
+            self.root.after(3000, self.monitor_excel)
+            return
+
+        try:
+            current_status = self.check_excel_status()
+
+            # 獲取當前顯示的狀態
+            current_display = self.excel_status.cget("text")
+
+            # 如果狀態發生變化，更新顯示
+            if current_status != current_display:
+                if current_status.startswith("已連接"):
+                    # Excel重新連接，嘗試載入數據
+                    if not current_display.startswith("已連接"):
+                        self.load_excel_data()
+                        # 如果有配置，自動重新掃描空格
+                        self.auto_rescan_on_reconnect()
+                        print(f"Excel狀態變化: {current_display} → {current_status}")
+
+                # 根據狀態設定顏色
+                if current_status.startswith("已連接"):
+                    color = "green"
+                elif current_status.startswith("等待"):
+                    color = "orange"
+                else:
+                    color = "red"
+
+                self.excel_status.config(text=current_status, foreground=color)
+
+        except Exception as e:
+            # 監控過程中的錯誤不要打擾用戶
+            pass
+
+        # 每3秒檢查一次
+        self.root.after(3000, self.monitor_excel)
+
+    def check_excel_status(self):
+        """檢查Excel當前狀態"""
+        try:
+            system = platform.system()
+
+            if system == "Windows" and WINDOWS_COM_AVAILABLE:
+                excel_app = win32com.client.GetActiveObject("Excel.Application")
+                active_workbook = excel_app.ActiveWorkbook
+
+                if active_workbook:
+                    workbook_name = active_workbook.Name
+                    # 更新實例變數
+                    self.active_workbook = active_workbook
+                    self.active_worksheet = excel_app.ActiveSheet
+                    return f"已連接: {workbook_name}"
+                else:
+                    # Excel開啟但沒有工作簿
+                    self.active_workbook = None
+                    self.active_worksheet = None
+                    return "Excel已開啟但無工作簿"
+
+            elif system == "Darwin" and MACOS_APPSCRIPT_AVAILABLE:
+                excel = app('Microsoft Excel')
+                active_workbook = excel.active_workbook
+
+                if active_workbook:
+                    workbook_name = active_workbook.name.get()
+                    # 更新實例變數
+                    self.active_workbook = active_workbook
+                    self.active_worksheet = excel.active_sheet
+                    return f"已連接: {workbook_name}"
+                else:
+                    # Excel開啟但沒有工作簿
+                    self.active_workbook = None
+                    self.active_worksheet = None
+                    return "Excel已開啟但無工作簿"
+
+        except:
+            # Excel未開啟或連接失敗
+            self.active_workbook = None
+            self.active_worksheet = None
+            # 在自動模式下顯示等待，手動模式顯示未連接
+            if self.auto_detect_mode:
+                return "等待Excel開啟..."
+            else:
+                return "未連接Excel"
+
+        # 在自動模式下顯示等待，手動模式顯示未連接
+        if self.auto_detect_mode:
+            return "等待Excel開啟..."
+        else:
+            return "未連接Excel"
+
+    def auto_rescan_on_reconnect(self):
+        """Excel重新連接時自動重新掃描"""
+        try:
+            # 檢查是否有選中的配置和目標欄位
+            current_config = self.config_var.get().strip()
+            target_field = self.field_var.get().strip()
+
+            if current_config and target_field:
+                # 靜默重新掃描空格
+                self.scan_empty_cells()
+                print(f"Excel重新連接，已自動重新掃描欄位: {target_field}")
+
+        except Exception as e:
+            # 靜默處理錯誤
+            print(f"自動重新掃描失敗: {e}")
+
+    def toggle_connection_mode(self):
+        """切換連接模式"""
+        self.auto_detect_mode = self.mode_var.get()
+
+        if self.auto_detect_mode:
+            # 切換到自動偵測模式
+            self.manual_connect_btn.pack_forget()  # 隱藏手動連接按鈕
+            self.excel_status.config(text="正在嘗試連接Excel...", foreground="orange")
+            # 立即嘗試自動連接
+            self.root.after(100, self.auto_connect_excel)
+        else:
+            # 切換到手動選取模式
+            # 將按鈕放在載入CSV右邊
+            self.manual_connect_btn.pack(side=tk.LEFT, after=self.csv_btn, padx=(5, 0))
+            self.excel_status.config(text="手動模式 - 點擊連接Excel", foreground="blue")
+
+    def connect_excel(self):
+        """手動連接Excel"""
+        system = platform.system()
+
+        if system == "Windows" and WINDOWS_COM_AVAILABLE:
+            self.connect_excel_windows()
+        elif system == "Darwin" and MACOS_APPSCRIPT_AVAILABLE:
+            self.connect_excel_macos()
+        else:
+            self.manual_excel_setup()
+
+    def connect_excel_windows(self):
+        """Windows連接"""
+        try:
+            excel_app = win32com.client.GetActiveObject("Excel.Application")
+            self.active_workbook = excel_app.ActiveWorkbook
+            self.active_worksheet = excel_app.ActiveSheet
+
+            if not self.active_workbook:
+                raise Exception("沒有開啟的工作簿")
+
+            workbook_name = self.active_workbook.Name
+            self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
+            self.load_excel_data()
+            # 移除連接成功的彈出視窗
+
+        except Exception as e:
+            # 在自動模式下，不做任何操作，讓監控繼續等待Excel開啟
+            # 在手動模式下，直接跳轉到文件選擇
+            if not self.auto_detect_mode:
+                self.manual_excel_setup()
+
+    def connect_excel_macos(self):
+        """macOS連接"""
+        try:
+            excel = app('Microsoft Excel')
+            self.active_workbook = excel.active_workbook
+            self.active_worksheet = excel.active_sheet
+
+            workbook_name = self.active_workbook.name.get()
+            self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
+            self.load_excel_data()
+            # 移除連接成功的彈出視窗
+
+        except Exception as e:
+            # 在自動模式下，不做任何操作，讓監控繼續等待Excel開啟
+            # 在手動模式下，直接跳轉到文件選擇
+            if not self.auto_detect_mode:
+                self.manual_excel_setup()
+
+    def manual_excel_setup(self):
+        """手動選擇Excel文件"""
+        # 在手動模式下，直接選擇文件而不顯示"連接失敗"訊息
+        if not self.auto_detect_mode:
+            result = True
+        else:
+            result = messagebox.askyesno("連接失敗",
+                "無法自動連接到Excel。是否選擇Excel文件？")
+
+        if result:
+            file_path = filedialog.askopenfilename(
+                title="選擇Excel文件",
+                filetypes=[("Excel files", "*.xlsx"), ("Excel files", "*.xls")]
+            )
+
+            if file_path:
+                try:
+                    self.excel_workbook = load_workbook(file_path, data_only=True)
+                    self.excel_sheet = self.excel_workbook.active
+                    filename = os.path.basename(file_path)
+                    self.excel_status.config(text=f"已載入: {filename}", foreground="blue")
+                    self.load_excel_data()
+                    # 移除載入成功的彈出視窗
+                except Exception as e:
+                    messagebox.showerror("錯誤", f"載入Excel失敗：{str(e)}")
+
+    def load_excel_data(self):
+        """載入Excel數據"""
+        try:
+            if self.active_worksheet:
+                # 從COM接口讀取
+                if platform.system() == "Windows":
+                    used_range = self.active_worksheet.UsedRange
+                    values = used_range.Value
+                    if isinstance(values, tuple):
+                        self.excel_data = [list(row) if isinstance(row, tuple) else [row] for row in values]
+                    else:
+                        self.excel_data = [[values]]
+                elif platform.system() == "Darwin":
+                    used_range = self.active_worksheet.used_range
+                    values = used_range.value.get()
+                    if isinstance(values, list):
+                        self.excel_data = values
+                    else:
+                        self.excel_data = [[values]]
+            elif self.excel_sheet:
+                # 從openpyxl讀取
+                self.excel_data = []
+                for row in self.excel_sheet.iter_rows(values_only=True):
+                    self.excel_data.append(list(row))
+
+        except Exception as e:
+            messagebox.showerror("錯誤", f"載入Excel數據失敗：{str(e)}")
+
+    def scan_empty_cells(self):
+        """掃描空格"""
+        field_name = self.field_var.get().strip()
+        if not field_name:
+            messagebox.showwarning("警告", "請輸入要搜尋的欄位名稱")
+            return
+
+        if not self.excel_data:
+            messagebox.showwarning("警告", "請先連接Excel")
+            return
+
+        try:
+            # 搜尋欄位標題
+            field_position = None
+            for row_idx, row in enumerate(self.excel_data):
+                for col_idx, cell in enumerate(row):
+                    if cell and field_name in str(cell):
+                        field_position = (row_idx, col_idx)
+                        break
+                if field_position:
+                    break
+
+            if not field_position:
+                messagebox.showwarning("警告", f"找不到欄位: {field_name}")
+                return
+
+            # 掃描該欄位下方的空格
+            field_row, field_col = field_position
+            empty_cells = []
+
+            # 掃描該欄位下方的空格，遇到非空格就停止
+            current_row = field_row + 1
+
+            while current_row < len(self.excel_data):
+                # 檢查當前行的空格（橫向，最多4個）
+                row_empty_count = 0
+                row_has_content = False
+
+                for col_offset in range(4):  # 每行最多4個空格
+                    check_col = field_col + col_offset
+                    if check_col < len(self.excel_data[current_row]):
+                        cell_value = self.excel_data[current_row][check_col]
+                        cell_str = str(cell_value).strip() if cell_value is not None else ''
+
+                        # 如果遇到非空格內容，停止這一行的掃描
+                        if cell_str != '':
+                            row_has_content = True
+                            break
+
+                        # 如果是空格，加入列表
+                        if cell_value is None or cell_str == '':
+                            col_letter = self.get_excel_column_name(check_col)
+                            cell_position = f"{col_letter}{current_row + 1}"
+                            empty_cells.append({
+                                'position': cell_position,
+                                'row': current_row,
+                                'col': check_col,
+                                'value': cell_value
+                            })
+                            row_empty_count += 1
+                    else:
+                        break
+
+                # 如果這一行有非空格內容，或者沒有找到空格，就停止掃描
+                if row_has_content or row_empty_count == 0:
+                    break
+
+                current_row += 1
+
+            if not empty_cells:
+                # 如果沒找到空格，檢查橫向的空格
+                for col_offset in range(1, 8):
+                    check_col = field_col + col_offset
+                    check_row = field_row + 1  # 下一行
+                    if (check_row < len(self.excel_data) and
+                        check_col < len(self.excel_data[check_row])):
+                        cell_value = self.excel_data[check_row][check_col]
+                        if cell_value is None or str(cell_value).strip() == '':
+                            col_letter = self.get_excel_column_name(check_col)
+                            cell_position = f"{col_letter}{check_row + 1}"
+                            empty_cells.append({
+                                'position': cell_position,
+                                'row': check_row,
+                                'col': check_col,
+                                'value': cell_value
+                            })
+
+            self.empty_cells = empty_cells
+            self.display_empty_cells_info()
+
+            # 更新空格數量顯示
+            self.spaces_count_label.config(text=f"找到空格: {len(empty_cells)} 個")
+
+            # 更新匹配狀態
+            self.update_match_status()
+
+            # 移除掃描成功的彈出視窗，只在沒找到時顯示警告
+            if not empty_cells:
+                messagebox.showwarning("警告", f"在欄位 '{field_name}' 下方沒有找到空白位置")
+
+        except Exception as e:
+            messagebox.showerror("錯誤", f"掃描失敗：{str(e)}")
+
+    def display_empty_cells_info(self):
+        """顯示空格信息"""
+        self.empty_cells_info.delete(1.0, tk.END)
+
+        if not self.empty_cells:
+            self.empty_cells_info.insert(tk.END, "尚未掃描到可填入位置\n\n請點擊'掃描空格'")
+            return
+
+        field_name = self.field_var.get()
+        self.empty_cells_info.insert(tk.END, f"欄位: {field_name}\n")
+        self.empty_cells_info.insert(tk.END, f"找到 {len(self.empty_cells)} 個位置:\n\n")
+
+        for i, cell in enumerate(self.empty_cells):
+            self.empty_cells_info.insert(tk.END, f"{i+1}. {cell['position']}\n")
+
+        self.empty_cells_info.insert(tk.END, f"\n請在左側選擇 {len(self.empty_cells)} 個CSV元素")
+
+    def execute_smart_mapping(self):
+        """執行映射"""
+        # 獲取選中的CSV項目
+        selected_items = self.csv_tree.selection()
+
+        # 詳細的防呆檢查
+        if not self.csv_data:
+            messagebox.showerror("錯誤", "請先載入CSV文件")
+            return
+
+        if not selected_items:
+            messagebox.showwarning("警告", "請在左側選擇CSV中的元素")
+            return
+
+        if not self.empty_cells:
+            messagebox.showwarning("警告", "請先點擊'掃描空格'找到可填入的位置")
+            return
+
+        if len(selected_items) != len(self.empty_cells):
+            messagebox.showerror("錯誤",
+                f"數量必須完全匹配！\n\n"
+                f"您選了: {len(selected_items)} 個CSV元素\n"
+                f"找到: {len(self.empty_cells)} 個空格位置\n\n"
+                f"請重新選擇，確保數量一致")
+            return
+
+        # 檢查Excel連接狀態
+        if not self.active_worksheet and not self.excel_sheet:
+            messagebox.showerror("錯誤", "Excel連接已斷開，請重新連接Excel")
+            return
+
+        # 確認執行
+        result = messagebox.askyesno("確認執行",
+            f"即將填入 {len(selected_items)} 個數據到Excel\n\n"
+            f"目標欄位: {self.field_var.get()}\n"
+            f"確定要執行嗎？")
+
+        if not result:
+            return
+
+        try:
+            filled_count = 0
+
+            for i, item_id in enumerate(selected_items):
+                # 獲取選中項目的索引
+                item_index = self.csv_tree.index(item_id)
+                csv_row = self.csv_data[item_index]
+
+                # 決定使用Dev還是Actual（Dev優先）
+                dev_value = csv_row.get('Dev', '')
+                actual_value = csv_row.get('Actual', '')
+
+                use_value = None
+                if dev_value and str(dev_value).strip() and str(dev_value).strip().lower() != 'n/a':
+                    use_value = str(dev_value).strip()
+                elif actual_value and str(actual_value).strip() and str(actual_value).strip().lower() != 'n/a':
+                    use_value = str(actual_value).strip()
+
+                if use_value:
+                    empty_cell = self.empty_cells[i]
+                    row_num = empty_cell['row'] + 1  # Excel行從1開始
+                    col_num = empty_cell['col'] + 1  # Excel列從1開始
+
+                    # 轉換數值
+                    try:
+                        numeric_value = float(use_value)
+                    except ValueError:
+                        numeric_value = use_value
+
+                    # 填入數據
+                    if self.active_worksheet:
+                        if platform.system() == "Windows":
+                            self.active_worksheet.Cells(row_num, col_num).Value = numeric_value
+                        elif platform.system() == "Darwin":
+                            cell = self.active_worksheet.cells[row_num, col_num]
+                            cell.value.set(numeric_value)
+                    elif self.excel_sheet:
+                        self.excel_sheet.cell(row=row_num, column=col_num, value=numeric_value)
+
+                    filled_count += 1
+
+            if self.excel_workbook and not self.active_worksheet:
+                # 如果是通過openpyxl載入的，需要保存
+                save_path = filedialog.asksaveasfilename(
+                    title="保存Excel文件",
+                    defaultextension=".xlsx",
+                    filetypes=[("Excel files", "*.xlsx")]
+                )
+                if save_path:
+                    self.excel_workbook.save(save_path)
+
+            messagebox.showinfo("成功",
+                f"映射完成！\n\n"
+                f"已成功填入 {filled_count} 個數據到欄位: {self.field_var.get()}\n"
+                f"請檢查Excel文件確認結果")
+
+        except Exception as e:
+            messagebox.showerror("錯誤", f"執行映射失敗：{str(e)}")
+
+    def save_config(self):
+        """保存配置"""
+        config_name = self.config_var.get().strip()
+        if not config_name:
+            messagebox.showwarning("警告", "請輸入配置名稱")
+            return
+
+        if not self.empty_cells:
+            messagebox.showwarning("警告", "沒有可保存的配置")
+            return
+
+        # 獲取當前選中的CSV elements
+        selected_items = self.csv_tree.selection()
+        selected_elements = []
+        for item_id in selected_items:
+            item_index = self.csv_tree.index(item_id)
+            if item_index < len(self.csv_data):
+                csv_row = self.csv_data[item_index]
+                selected_elements.append({
+                    'element': csv_row.get('Element', ''),
+                    'dev': csv_row.get('Dev', ''),
+                    'actual': csv_row.get('Actual', '')
+                })
+
+        config_data = {
+            'field_name': self.field_var.get(),
+            'empty_cells': self.empty_cells,
+            'selected_elements': selected_elements
+        }
+
+        self.field_mappings[config_name] = config_data
+
+        try:
+            with open('field_mappings.json', 'w', encoding='utf-8') as f:
+                json.dump(self.field_mappings, f, ensure_ascii=False, indent=2)
+
+            # 更新配置列表
+            self.update_config_list()
+
+            # 移除保存配置成功的彈出視窗
+        except Exception as e:
+            messagebox.showerror("錯誤", f"保存配置失敗：{str(e)}")
+
+    def load_config(self):
+        """載入配置"""
+        config_name = self.config_var.get().strip()
+        if not config_name or config_name not in self.field_mappings:
+            messagebox.showwarning("警告", "請選擇有效的配置")
+            return
+
+        try:
+            config_data = self.field_mappings[config_name]
+
+            # 設置目標欄位
+            self.field_var.set(config_data['field_name'])
+
+            # 檢查是否有Excel連接
+            if not self.active_worksheet and not self.excel_sheet:
+                messagebox.showwarning("警告", "請先連接Excel，然後重新載入配置")
+                return
+
+            # 自動重新掃描空格（基於目標欄位）
+            self.scan_empty_cells()
+
+            # 如果有存儲的選中elements且CSV已載入，自動選中對應的items
+            if 'selected_elements' in config_data and self.csv_data:
+                self.auto_select_elements(config_data['selected_elements'])
+
+            # 移除載入配置成功的彈出視窗
+        except Exception as e:
+            messagebox.showerror("錯誤", f"載入配置失敗：{str(e)}")
+
+    def load_configs(self):
+        """載入保存的配置"""
+        try:
+            if os.path.exists('field_mappings.json'):
+                with open('field_mappings.json', 'r', encoding='utf-8') as f:
+                    self.field_mappings = json.load(f)
+        except Exception as e:
+            self.field_mappings = {}
+
+        # 更新配置列表
+        self.update_config_list()
+
+    def update_config_list(self):
+        """更新配置下拉列表"""
+        config_names = list(self.field_mappings.keys())
+        self.config_combo['values'] = config_names
+
+        # 如果有配置但當前沒選中任何，選中第一個
+        if config_names and not self.config_var.get():
+            self.config_var.set(config_names[0])
+
+    def auto_select_elements(self, selected_elements):
+        """根據配置自動選中對應的CSV元素"""
+        if not self.csv_data or not selected_elements:
+            return
+
+        # 清除當前選擇
+        self.csv_tree.selection_remove(self.csv_tree.selection())
+
+        selected_items = []
+
+        # 遍歷配置中的元素，在當前CSV中找到對應的項目
+        for config_element in selected_elements:
+            config_element_name = config_element.get('element', '')
+            config_dev = str(config_element.get('dev', '')).strip()
+            config_actual = str(config_element.get('actual', '')).strip()
+
+            # 在CSV數據中尋找匹配的項目
+            for i, csv_row in enumerate(self.csv_data):
+                csv_element = csv_row.get('Element', '')
+                csv_dev = str(csv_row.get('Dev', '')).strip()
+                csv_actual = str(csv_row.get('Actual', '')).strip()
+
+                # 檢查是否匹配（主要以Element名稱為準，Dev/Actual作為輔助）
+                if (csv_element == config_element_name and
+                    (csv_dev == config_dev or csv_actual == config_actual)):
+
+                    # 獲取對應的TreeView item
+                    try:
+                        children = self.csv_tree.get_children()
+                        if i < len(children):
+                            item_id = children[i]
+                            selected_items.append(item_id)
+                            break
+                    except:
+                        continue
+
+        # 設置選中狀態
+        if selected_items:
+            self.csv_tree.selection_set(selected_items)
+            self.update_selection_info()
+
+            # 移除自動選中的彈出視窗
+
+    def delete_config(self):
+        """刪除配置"""
+        config_name = self.config_var.get().strip()
+        if not config_name or config_name not in self.field_mappings:
+            messagebox.showwarning("警告", "請選擇要刪除的配置")
+            return
+
+        # 確認刪除
+        result = messagebox.askyesno("確認刪除",
+            f"確定要刪除配置 '{config_name}' 嗎？\n此操作無法撤銷。")
+
+        if not result:
+            return
+
+        try:
+            # 從記憶體中刪除
+            del self.field_mappings[config_name]
+
+            # 保存到檔案
+            with open('field_mappings.json', 'w', encoding='utf-8') as f:
+                json.dump(self.field_mappings, f, ensure_ascii=False, indent=2)
+
+            # 清空當前選擇
+            self.config_var.set('')
+
+            # 更新配置列表
+            self.update_config_list()
+
+            # 移除刪除配置成功的彈出視窗
+        except Exception as e:
+            messagebox.showerror("錯誤", f"刪除配置失敗：{str(e)}")
+
+    def run(self):
+        """運行程序"""
+        self.root.mainloop()
+
+if __name__ == "__main__":
+    app = SmartExcelMapper()
+    app.run()
