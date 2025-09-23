@@ -21,15 +21,8 @@ if platform.system() == "Windows":
         WINDOWS_COM_AVAILABLE = True
     except ImportError:
         WINDOWS_COM_AVAILABLE = False
-elif platform.system() == "Darwin":
-    try:
-        from appscript import app
-        MACOS_APPSCRIPT_AVAILABLE = True
-    except ImportError:
-        MACOS_APPSCRIPT_AVAILABLE = False
 else:
     WINDOWS_COM_AVAILABLE = False
-    MACOS_APPSCRIPT_AVAILABLE = False
 
 class SmartExcelMapper:
     """Excel映射工具"""
@@ -325,27 +318,16 @@ class SmartExcelMapper:
         """啟動時自動連接Excel（靜默模式）"""
         try:
             system = platform.system()
+            excel_app = win32com.client.GetActiveObject("Excel.Application")
+            self.active_workbook = excel_app.ActiveWorkbook
+            self.active_worksheet = excel_app.ActiveSheet
 
-            if system == "Windows" and WINDOWS_COM_AVAILABLE:
-                excel_app = win32com.client.GetActiveObject("Excel.Application")
-                self.active_workbook = excel_app.ActiveWorkbook
-                self.active_worksheet = excel_app.ActiveSheet
-
-                if self.active_workbook:
-                    workbook_name = self.active_workbook.Name
-                    self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
-                    self.load_excel_data()
-                else:
-                    raise Exception("沒有開啟的工作簿")
-
-            elif system == "Darwin" and MACOS_APPSCRIPT_AVAILABLE:
-                excel = app('Microsoft Excel')
-                self.active_workbook = excel.active_workbook
-                self.active_worksheet = excel.active_sheet
-
-                workbook_name = self.active_workbook.name.get()
+            if self.active_workbook:
+                workbook_name = self.active_workbook.Name
                 self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
                 self.load_excel_data()
+            else:
+                raise Exception("沒有開啟的工作簿")
 
         except:
             # 靜默失敗，在自動模式下顯示等待狀態
@@ -403,38 +385,20 @@ class SmartExcelMapper:
         """檢查Excel當前狀態"""
         try:
             system = platform.system()
+            excel_app = win32com.client.GetActiveObject("Excel.Application")
+            active_workbook = excel_app.ActiveWorkbook
 
-            if system == "Windows" and WINDOWS_COM_AVAILABLE:
-                excel_app = win32com.client.GetActiveObject("Excel.Application")
-                active_workbook = excel_app.ActiveWorkbook
-
-                if active_workbook:
-                    workbook_name = active_workbook.Name
-                    # 更新實例變數
-                    self.active_workbook = active_workbook
-                    self.active_worksheet = excel_app.ActiveSheet
-                    return f"已連接: {workbook_name}"
-                else:
-                    # Excel開啟但沒有工作簿
-                    self.active_workbook = None
-                    self.active_worksheet = None
-                    return "Excel已開啟但無工作簿"
-
-            elif system == "Darwin" and MACOS_APPSCRIPT_AVAILABLE:
-                excel = app('Microsoft Excel')
-                active_workbook = excel.active_workbook
-
-                if active_workbook:
-                    workbook_name = active_workbook.name.get()
-                    # 更新實例變數
-                    self.active_workbook = active_workbook
-                    self.active_worksheet = excel.active_sheet
-                    return f"已連接: {workbook_name}"
-                else:
-                    # Excel開啟但沒有工作簿
-                    self.active_workbook = None
-                    self.active_worksheet = None
-                    return "Excel已開啟但無工作簿"
+            if active_workbook:
+                workbook_name = active_workbook.Name
+                # 更新實例變數
+                self.active_workbook = active_workbook
+                self.active_worksheet = excel_app.ActiveSheet
+                return f"已連接: {workbook_name}"
+            else:
+                # Excel開啟但沒有工作簿
+                self.active_workbook = None
+                self.active_worksheet = None
+                return "Excel已開啟但無工作簿"
 
         except:
             # Excel未開啟或連接失敗
@@ -490,8 +454,6 @@ class SmartExcelMapper:
 
         if system == "Windows" and WINDOWS_COM_AVAILABLE:
             self.connect_excel_windows()
-        elif system == "Darwin" and MACOS_APPSCRIPT_AVAILABLE:
-            self.connect_excel_macos()
         else:
             self.manual_excel_setup()
 
@@ -506,24 +468,6 @@ class SmartExcelMapper:
                 raise Exception("沒有開啟的工作簿")
 
             workbook_name = self.active_workbook.Name
-            self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
-            self.load_excel_data()
-            # 移除連接成功的彈出視窗
-
-        except Exception as e:
-            # 在自動模式下，不做任何操作，讓監控繼續等待Excel開啟
-            # 在手動模式下，直接跳轉到文件選擇
-            if not self.auto_detect_mode:
-                self.manual_excel_setup()
-
-    def connect_excel_macos(self):
-        """macOS連接"""
-        try:
-            excel = app('Microsoft Excel')
-            self.active_workbook = excel.active_workbook
-            self.active_worksheet = excel.active_sheet
-
-            workbook_name = self.active_workbook.name.get()
             self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
             self.load_excel_data()
             # 移除連接成功的彈出視窗
