@@ -24,12 +24,15 @@ if platform.system() == "Windows":
 else:
     WINDOWS_COM_AVAILABLE = False
 
+FIELD_MAPPING_DIR = os.path.expanduser("~/documents/field_mappings")
+FIELD_MAPPING_PATH = os.path.join(FIELD_MAPPING_DIR, "field_mappings.json")
+
 class SmartExcelMapper:
     """Excel映射工具"""
 
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Excel CSV映射工具")
+        self.root.title("Excel Mapper")
         self.root.geometry("1400x800")
 
         # 數據存儲
@@ -52,6 +55,9 @@ class SmartExcelMapper:
         self.config_var = tk.StringVar()
         self.field_var = tk.StringVar()
         self.new_config_var = tk.StringVar()
+
+        # 建立映射資料夾
+        os.makedirs(FIELD_MAPPING_DIR, exist_ok=True)
 
         self.setup_ui()
         self.load_configs()
@@ -867,74 +873,76 @@ class SmartExcelMapper:
                     filled_count += 1
 
             if self.excel_workbook and not self.active_worksheet:
-                # 如果是通過openpyxl載入的，需要保存
-                save_path = filedialog.asksaveasfilename(
-                    title="保存Excel文件",
-                    defaultextension=".xlsx",
-                    filetypes=[("Excel files", "*.xlsx")]
-                )
-                if save_path:
-                    self.excel_workbook.save(save_path)
+                # openpyxl模式，自動儲存（覆寫原檔案）
+                try:
+                    if hasattr(self.excel_workbook, 'filename') and self.excel_workbook.filename:
+                        self.excel_workbook.save(self.excel_workbook.filename)
+                    else:
+                        # 若無原始檔名，則另存新檔
+                        save_path = filedialog.asksaveasfilename(
+                            title="保存Excel文件",
+                            defaultextension=".xlsx",
+                            filetypes=[("Excel files", "*.xlsx")]
+                        )
+                        if save_path:
+                            self.excel_workbook.save(save_path)
+                except Exception as e:
+                    messagebox.showwarning("警告", f"自動儲存Excel失敗：{str(e)}")
+            elif self.active_workbook:
+                # Windows COM模式，自動儲存
+                try:
+                    self.active_workbook.Save()
+                except Exception as e:
+                    messagebox.showwarning("警告", f"自動儲存Excel失敗：{str(e)}")
 
             messagebox.showinfo("成功",
                 f"映射完成！\n\n"
                 f"已成功填入 {filled_count} 個數據到欄位: {self.field_var.get()}\n"
                 f"請檢查Excel文件確認結果")
 
+            # 清空CSV資料與介面
+            self.csv_data = []
+            for item in self.csv_tree.get_children():
+                self.csv_tree.delete(item)
+            self.csv_tree.selection_remove(self.csv_tree.selection())
+            self.csv_selection_label.config(text="已選取: 0 個元素")
+
         except Exception as e:
             messagebox.showerror("錯誤", f"執行映射失敗：{str(e)}")
 
     def save_config(self):
         """保存配置"""
-        # 優先使用新配置名稱輸入框，如果為空則使用當前選中的配置
         new_config_name = self.new_config_var.get().strip()
         current_config_name = self.config_var.get().strip()
-
         config_name = new_config_name if new_config_name else current_config_name
 
         if not config_name:
             messagebox.showwarning("警告", "請輸入配置名稱或選擇現有配置")
             return
 
-        if not self.empty_cells:
-            messagebox.showwarning("警告", "沒有可保存的配置")
-            return
-
-        # 獲取當前選中的CSV elements
+        # 只保存 element
         selected_items = self.csv_tree.selection()
         selected_elements = []
         for item_id in selected_items:
             item_index = self.csv_tree.index(item_id)
             if item_index < len(self.csv_data):
                 csv_row = self.csv_data[item_index]
-                selected_elements.append({
-                    'element': csv_row.get('Element', ''),
-                    'dev': csv_row.get('Dev', ''),
-                    'actual': csv_row.get('Actual', '')
-                })
+                selected_elements.append(csv_row.get('Element', ''))
 
         config_data = {
             'field_name': self.field_var.get(),
-            'empty_cells': self.empty_cells,
             'selected_elements': selected_elements
         }
 
         self.field_mappings[config_name] = config_data
 
         try:
-            with open('field_mappings.json', 'w', encoding='utf-8') as f:
+            with open(FIELD_MAPPING_PATH, 'w', encoding='utf-8') as f:
                 json.dump(self.field_mappings, f, ensure_ascii=False, indent=2)
 
-            # 更新配置列表
             self.update_config_list()
-
-            # 設定當前選中的配置
             self.config_var.set(config_name)
-
-            # 清空新配置名稱輸入框
             self.new_config_var.set('')
-
-            # 移除保存配置成功的彈出視窗
         except Exception as e:
             messagebox.showerror("錯誤", f"保存配置失敗：{str(e)}")
 
@@ -947,30 +955,24 @@ class SmartExcelMapper:
 
         try:
             config_data = self.field_mappings[config_name]
-
-            # 設置目標欄位
             self.field_var.set(config_data['field_name'])
 
-            # 檢查是否有Excel連接
             if not self.active_worksheet and not self.excel_sheet:
                 messagebox.showwarning("警告", "請先連接Excel，然後重新套用配置")
                 return
 
-            # 自動重新掃描空格（基於目標欄位）
             self.scan_empty_cells()
 
-            # 如果有存儲的選中elements且CSV已載入，自動選中對應的items
             if 'selected_elements' in config_data and self.csv_data:
                 self.auto_select_elements(config_data['selected_elements'])
-
         except Exception as e:
             messagebox.showerror("錯誤", f"套用配置失敗：{str(e)}")
 
     def load_configs(self):
         """套用保存的配置"""
         try:
-            if os.path.exists('field_mappings.json'):
-                with open('field_mappings.json', 'r', encoding='utf-8') as f:
+            if os.path.exists(FIELD_MAPPING_PATH):
+                with open(FIELD_MAPPING_PATH, 'r', encoding='utf-8') as f:
                     self.field_mappings = json.load(f)
         except Exception as e:
             self.field_mappings = {}
@@ -999,33 +1001,17 @@ class SmartExcelMapper:
 
         selected_items = []
 
-        # 遍歷配置中的元素，在當前CSV中找到對應的項目
-        for config_element in selected_elements:
-            config_element_name = config_element.get('element', '')
-            config_dev = str(config_element.get('dev', '')).strip()
-            config_actual = str(config_element.get('actual', '')).strip()
-
-            # 在CSV數據中尋找匹配的項目
+        # 只比對 element
+        for config_element_name in selected_elements:
             for i, csv_row in enumerate(self.csv_data):
                 csv_element = csv_row.get('Element', '')
-                csv_dev = str(csv_row.get('Dev', '')).strip()
-                csv_actual = str(csv_row.get('Actual', '')).strip()
+                if csv_element == config_element_name:
+                    children = self.csv_tree.get_children()
+                    if i < len(children):
+                        item_id = children[i]
+                        selected_items.append(item_id)
+                        break
 
-                # 檢查是否匹配（主要以Element名稱為準，Dev/Actual作為輔助）
-                if (csv_element == config_element_name and
-                    (csv_dev == config_dev or csv_actual == config_actual)):
-
-                    # 獲取對應的TreeView item
-                    try:
-                        children = self.csv_tree.get_children()
-                        if i < len(children):
-                            item_id = children[i]
-                            selected_items.append(item_id)
-                            break
-                    except:
-                        continue
-
-        # 設置選中狀態
         if selected_items:
             self.csv_tree.selection_set(selected_items)
             self.update_selection_info()
@@ -1051,7 +1037,7 @@ class SmartExcelMapper:
             del self.field_mappings[config_name]
 
             # 保存到檔案
-            with open('field_mappings.json', 'w', encoding='utf-8') as f:
+            with open(FIELD_MAPPING_PATH, 'w', encoding='utf-8') as f:
                 json.dump(self.field_mappings, f, ensure_ascii=False, indent=2)
 
             # 清空當前選擇
