@@ -83,10 +83,10 @@ class SmartExcelMapper:
         file_group = ttk.Frame(row1)
         file_group.pack(side=tk.LEFT, padx=(0, 30))
 
-        self.csv_btn = ttk.Button(file_group, text="載入CSV", command=self.load_csv, width=12)
+        self.csv_btn = ttk.Button(file_group, text="載入CSV", command=self.load_csv, width=10)
         self.csv_btn.pack(side=tk.LEFT, padx=(0, 10))
 
-        self.manual_connect_btn = ttk.Button(file_group, text="連接Excel", command=self.connect_excel, width=12)
+        self.manual_connect_btn = ttk.Button(file_group, text="連接Excel", command=self.connect_excel, width=10)
         # 預設不顯示，由toggle_connection_mode控制
 
         # Excel模式和狀態群組
@@ -113,12 +113,20 @@ class SmartExcelMapper:
         self.excel_status = ttk.Label(status_frame, text="正在嘗試連接Excel...", foreground="orange")
         self.excel_status.pack(side=tk.LEFT)
 
-        # 目標欄位
-        field_group = ttk.Frame(row1)
-        field_group.pack(side=tk.RIGHT)
+        # 執行映射按鈕（右上角大方形）
+        execute_main_group = ttk.Frame(row1)
+        execute_main_group.pack(side=tk.RIGHT)
 
-        ttk.Label(field_group, text="目標欄位:").pack(side=tk.LEFT)
-        ttk.Entry(field_group, textvariable=self.field_var, width=25).pack(side=tk.LEFT, padx=(5, 0))
+        # 創建執行映射按鈕（大的方形，醒目顏色）
+        self.execute_btn = tk.Button(execute_main_group, text="執行映射",
+                                    command=self.execute_smart_mapping,
+                                    width=15, height=3,
+                                    background="lightblue", foreground="black",
+                                    font=('Arial', 12, 'bold'),
+                                    relief=tk.RAISED, bd=3,
+                                    activebackground="lightgreen",
+                                    cursor="hand2")
+        self.execute_btn.pack(side=tk.LEFT, padx=5, pady=5)
 
         # 第二行：配置管理
         row2 = ttk.Frame(control_frame)
@@ -148,8 +156,8 @@ class SmartExcelMapper:
         config_buttons = ttk.Frame(config_group)
         config_buttons.pack(side=tk.LEFT)
 
-        ttk.Button(config_buttons, text="套用", command=self.load_config, width=8).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(config_buttons, text="刪除", command=self.delete_config, width=8).pack(side=tk.LEFT)
+        ttk.Button(config_buttons, text="套用", command=self.load_config, width=10).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(config_buttons, text="刪除", command=self.delete_config, width=10).pack(side=tk.LEFT)
 
         # 新配置管理
         new_config_group = ttk.Frame(row2)
@@ -157,14 +165,21 @@ class SmartExcelMapper:
 
         ttk.Label(new_config_group, text="新配置:").pack(side=tk.LEFT)
         ttk.Entry(new_config_group, textvariable=self.new_config_var, width=15).pack(side=tk.LEFT, padx=(5, 5))
-        ttk.Button(new_config_group, text="保存", command=self.save_config, width=8).pack(side=tk.LEFT)
+        ttk.Button(new_config_group, text="保存", command=self.save_config, width=10).pack(side=tk.LEFT)
 
-        # 執行操作
-        action_group = ttk.Frame(row2)
-        action_group.pack(side=tk.RIGHT)
+        # 目標欄位與掃描空格群組
+        field_scan_group = ttk.Frame(row2)
+        field_scan_group.pack(side=tk.RIGHT)
 
-        ttk.Button(action_group, text="掃描空格", command=self.scan_empty_cells, width=12).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(action_group, text="執行映射", command=self.execute_smart_mapping, width=12).pack(side=tk.LEFT)
+        # 目標欄位
+        field_frame = ttk.Frame(field_scan_group)
+        field_frame.pack(side=tk.LEFT, padx=(0, 10))
+
+        ttk.Label(field_frame, text="目標欄位:").pack(side=tk.LEFT)
+        ttk.Entry(field_frame, textvariable=self.field_var, width=25).pack(side=tk.LEFT, padx=(5, 0))
+
+        # 掃描空格按鈕
+        ttk.Button(field_scan_group, text="掃描空格", command=self.scan_empty_cells, width=10).pack(side=tk.LEFT)
 
         # =================== 主工作區 ===================
         work_frame = ttk.Frame(main_frame)
