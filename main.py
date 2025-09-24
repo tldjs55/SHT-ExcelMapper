@@ -48,6 +48,11 @@ class SmartExcelMapper:
         self.current_field = None
         self.empty_cells = []  # 當前欄位的空格
 
+        # 初始化界面變量
+        self.config_var = tk.StringVar()
+        self.field_var = tk.StringVar()
+        self.new_config_var = tk.StringVar()
+
         self.setup_ui()
         self.load_configs()
 
@@ -57,55 +62,109 @@ class SmartExcelMapper:
         # 定期檢查Excel連接狀態
         self.start_excel_monitoring()
 
+        # 初始化彈出式選單變數
+        self.config_popup = None
+
     def setup_ui(self):
         """設置界面"""
         # 主框架
         main_frame = ttk.Frame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # =================== 頂部控制區 ===================
+        # =================== 簡潔控制面板 ===================
         control_frame = ttk.LabelFrame(main_frame, text="控制面板", padding=10)
         control_frame.pack(fill=tk.X, pady=(0, 10))
 
-        # 文件操作行
-        file_row = ttk.Frame(control_frame)
-        file_row.pack(fill=tk.X, pady=(0, 5))
+        # 第一行：檔案和Excel
+        row1 = ttk.Frame(control_frame)
+        row1.pack(fill=tk.X, pady=(0, 10))
 
-        self.csv_btn = ttk.Button(file_row, text="載入CSV", command=self.load_csv, width=12)
-        self.csv_btn.pack(side=tk.LEFT, padx=(0, 5))
+        # 檔案操作群組
+        file_group = ttk.Frame(row1)
+        file_group.pack(side=tk.LEFT, padx=(0, 30))
 
-        # Excel連接模式切換
-        mode_frame = ttk.Frame(file_row)
-        mode_frame.pack(side=tk.LEFT, padx=(0, 10))
+        self.csv_btn = ttk.Button(file_group, text="載入CSV", command=self.load_csv, width=12)
+        self.csv_btn.pack(side=tk.LEFT, padx=(0, 10))
 
-        self.mode_var = tk.BooleanVar(value=True)  # True=自動偵測, False=手動選取
+        self.manual_connect_btn = ttk.Button(file_group, text="連接Excel", command=self.connect_excel, width=12)
+        # 預設不顯示，由toggle_connection_mode控制
+
+        # Excel模式和狀態群組
+        excel_group = ttk.Frame(row1)
+        excel_group.pack(side=tk.LEFT, padx=(0, 20))
+
+        # Excel模式選擇
+        mode_frame = ttk.Frame(excel_group)
+        mode_frame.pack(side=tk.TOP, anchor=tk.W)
+
+        self.mode_var = tk.BooleanVar(value=True)
         self.auto_radio = ttk.Radiobutton(mode_frame, text="自動偵測", variable=self.mode_var,
                                          value=True, command=self.toggle_connection_mode)
-        self.auto_radio.pack(side=tk.LEFT)
+        self.auto_radio.pack(side=tk.LEFT, padx=(0, 15))
 
         self.manual_radio = ttk.Radiobutton(mode_frame, text="手動選取", variable=self.mode_var,
                                            value=False, command=self.toggle_connection_mode)
-        self.manual_radio.pack(side=tk.LEFT, padx=(10, 0))
+        self.manual_radio.pack(side=tk.LEFT)
 
-        # 手動連接按鈕（初始隱藏）
-        self.manual_connect_btn = ttk.Button(file_row, text="連接Excel", command=self.connect_excel, width=12)
+        # Excel狀態顯示
+        status_frame = ttk.Frame(excel_group)
+        status_frame.pack(side=tk.TOP, anchor=tk.W, pady=(5, 0))
 
-        self.excel_status = ttk.Label(file_row, text="正在嘗試連接Excel...", foreground="orange")
-        self.excel_status.pack(side=tk.LEFT, padx=(10, 0))
+        self.excel_status = ttk.Label(status_frame, text="正在嘗試連接Excel...", foreground="orange")
+        self.excel_status.pack(side=tk.LEFT)
 
-        # 欄位識別行
-        field_row = ttk.Frame(control_frame)
-        field_row.pack(fill=tk.X, pady=(0, 5))
+        # 目標欄位
+        field_group = ttk.Frame(row1)
+        field_group.pack(side=tk.RIGHT)
 
-        ttk.Label(field_row, text="目標欄位:").pack(side=tk.LEFT)
-        self.field_var = tk.StringVar(value="化學後孔壁厚度*")
-        field_entry = ttk.Entry(field_row, textvariable=self.field_var, width=20)
-        field_entry.pack(side=tk.LEFT, padx=(5, 10))
+        ttk.Label(field_group, text="目標欄位:").pack(side=tk.LEFT)
+        ttk.Entry(field_group, textvariable=self.field_var, width=25).pack(side=tk.LEFT, padx=(5, 0))
 
-        ttk.Button(field_row, text="掃描空格", command=self.scan_empty_cells, width=15).pack(side=tk.LEFT, padx=(0, 20))
+        # 第二行：配置管理
+        row2 = ttk.Frame(control_frame)
+        row2.pack(fill=tk.X, pady=(0, 10))
 
-        # 執行按鈕
-        ttk.Button(field_row, text="執行映射", command=self.execute_smart_mapping, width=12).pack(side=tk.RIGHT)
+        # 當前配置
+        config_group = ttk.Frame(row2)
+        config_group.pack(side=tk.LEFT, padx=(0, 30))
+
+        ttk.Label(config_group, text="配置:").pack(side=tk.LEFT)
+
+        config_click_frame = ttk.Frame(config_group)
+        config_click_frame.pack(side=tk.LEFT, padx=(5, 10))
+
+        self.config_display = ttk.Entry(config_click_frame, textvariable=self.config_var, state='readonly', width=20)
+        self.config_display.pack(side=tk.LEFT)
+
+        # 隱藏的Combobox
+        self.config_combo = ttk.Combobox(control_frame, textvariable=self.config_var, width=1)
+        self.config_combo.place(x=-1000, y=-1000)
+
+        # 綁定事件
+        config_click_frame.bind('<Button-1>', self.on_config_click)
+        self.config_display.bind('<Button-1>', self.on_config_click)
+
+        # 配置操作按鈕
+        config_buttons = ttk.Frame(config_group)
+        config_buttons.pack(side=tk.LEFT)
+
+        ttk.Button(config_buttons, text="套用", command=self.load_config, width=8).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(config_buttons, text="刪除", command=self.delete_config, width=8).pack(side=tk.LEFT)
+
+        # 新配置管理
+        new_config_group = ttk.Frame(row2)
+        new_config_group.pack(side=tk.LEFT, padx=(0, 30))
+
+        ttk.Label(new_config_group, text="新配置:").pack(side=tk.LEFT)
+        ttk.Entry(new_config_group, textvariable=self.new_config_var, width=15).pack(side=tk.LEFT, padx=(5, 5))
+        ttk.Button(new_config_group, text="保存", command=self.save_config, width=8).pack(side=tk.LEFT)
+
+        # 執行操作
+        action_group = ttk.Frame(row2)
+        action_group.pack(side=tk.RIGHT)
+
+        ttk.Button(action_group, text="掃描空格", command=self.scan_empty_cells, width=12).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(action_group, text="執行映射", command=self.execute_smart_mapping, width=12).pack(side=tk.LEFT)
 
         # =================== 主工作區 ===================
         work_frame = ttk.Frame(main_frame)
@@ -167,7 +226,7 @@ class SmartExcelMapper:
 
         # 狀態顯示區
         status_frame = ttk.LabelFrame(mapping_frame, text="映射狀態", padding=5)
-        status_frame.pack(fill=tk.X, pady=(0, 10))
+        status_frame.pack(fill=tk.X, pady=(10, 10))
 
         # 空格數量顯示
         self.spaces_count_label = ttk.Label(status_frame, text="找到空格: 0 個", font=('Arial', 10, 'bold'))
@@ -188,20 +247,80 @@ class SmartExcelMapper:
         self.empty_cells_info.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         info_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # 配置管理
-        config_frame = ttk.LabelFrame(mapping_frame, text="配置管理", padding=5)
-        config_frame.pack(fill=tk.X, pady=(10, 0))
 
-        ttk.Label(config_frame, text="配置名稱:").pack(anchor=tk.W)
-        self.config_var = tk.StringVar()
-        self.config_combo = ttk.Combobox(config_frame, textvariable=self.config_var, width=25)
-        self.config_combo.pack(fill=tk.X, pady=(0, 5))
+    def on_config_click(self, event):
+        """處理配置選項點擊事件"""
+        # 如果彈出視窗已存在，先銷毀它
+        if self.config_popup:
+            self.config_popup.destroy()
+            self.config_popup = None
+            return
 
-        button_frame = ttk.Frame(config_frame)
-        button_frame.pack(fill=tk.X)
-        ttk.Button(button_frame, text="保存", command=self.save_config, width=8).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(button_frame, text="載入", command=self.load_config, width=8).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(button_frame, text="刪除", command=self.delete_config, width=8).pack(side=tk.LEFT)
+        # 創建彈出視窗
+        self.config_popup = tk.Toplevel(self.root)
+        self.config_popup.title("選擇配置")
+        self.config_popup.geometry("300x200")
+        self.config_popup.resizable(False, False)
+
+        # 設定彈出視窗位置（在點擊位置附近）
+        x = self.root.winfo_rootx() + event.x_root - self.root.winfo_rootx()
+        y = self.root.winfo_rooty() + event.y_root - self.root.winfo_rooty() + 30
+        self.config_popup.geometry(f"+{x}+{y}")
+
+        # 創建列表框
+        listbox_frame = ttk.Frame(self.config_popup)
+        listbox_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # 配置列表
+        config_listbox = tk.Listbox(listbox_frame, height=8)
+        config_scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=config_listbox.yview)
+        config_listbox.configure(yscrollcommand=config_scrollbar.set)
+
+        # 添加配置選項
+        config_names = list(self.field_mappings.keys())
+        for name in config_names:
+            config_listbox.insert(tk.END, name)
+
+        # 選中當前配置
+        current_config = self.config_var.get()
+        if current_config in config_names:
+            config_listbox.selection_set(config_names.index(current_config))
+
+        config_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        config_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 按鈕框架
+        button_frame = ttk.Frame(self.config_popup)
+        button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        def on_select():
+            selection = config_listbox.curselection()
+            if selection:
+                selected_config = config_listbox.get(selection[0])
+                self.config_var.set(selected_config)
+            self.config_popup.destroy()
+            self.config_popup = None
+
+        def on_cancel():
+            self.config_popup.destroy()
+            self.config_popup = None
+
+        ttk.Button(button_frame, text="確定", command=on_select).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="取消", command=on_cancel).pack(side=tk.LEFT)
+
+        # 綁定雙擊事件
+        config_listbox.bind('<Double-Button-1>', lambda e: on_select())
+
+        # 綁定ESC鍵關閉
+        self.config_popup.bind('<Escape>', lambda e: on_cancel())
+
+        # 設定焦點
+        self.config_popup.focus_set()
+        config_listbox.focus_set()
+
+        # 讓彈出視窗保持在最上層
+        self.config_popup.transient(self.root)
+        self.config_popup.grab_set()
 
     def load_csv(self):
         """載入CSV文件"""
@@ -443,9 +562,8 @@ class SmartExcelMapper:
             # 立即嘗試自動連接
             self.root.after(100, self.auto_connect_excel)
         else:
-            # 切換到手動選取模式
-            # 將按鈕放在載入CSV右邊
-            self.manual_connect_btn.pack(side=tk.LEFT, after=self.csv_btn, padx=(5, 0))
+            # 切換到手動選取模式 - 在檔案群組中顯示連接按鈕
+            self.manual_connect_btn.pack(side=tk.LEFT)
             self.excel_status.config(text="手動模式 - 點擊連接Excel", foreground="blue")
 
     def connect_excel(self):
@@ -753,9 +871,14 @@ class SmartExcelMapper:
 
     def save_config(self):
         """保存配置"""
-        config_name = self.config_var.get().strip()
+        # 優先使用新配置名稱輸入框，如果為空則使用當前選中的配置
+        new_config_name = self.new_config_var.get().strip()
+        current_config_name = self.config_var.get().strip()
+
+        config_name = new_config_name if new_config_name else current_config_name
+
         if not config_name:
-            messagebox.showwarning("警告", "請輸入配置名稱")
+            messagebox.showwarning("警告", "請輸入配置名稱或選擇現有配置")
             return
 
         if not self.empty_cells:
@@ -790,12 +913,18 @@ class SmartExcelMapper:
             # 更新配置列表
             self.update_config_list()
 
+            # 設定當前選中的配置
+            self.config_var.set(config_name)
+
+            # 清空新配置名稱輸入框
+            self.new_config_var.set('')
+
             # 移除保存配置成功的彈出視窗
         except Exception as e:
             messagebox.showerror("錯誤", f"保存配置失敗：{str(e)}")
 
     def load_config(self):
-        """載入配置"""
+        """套用配置"""
         config_name = self.config_var.get().strip()
         if not config_name or config_name not in self.field_mappings:
             messagebox.showwarning("警告", "請選擇有效的配置")
@@ -809,7 +938,7 @@ class SmartExcelMapper:
 
             # 檢查是否有Excel連接
             if not self.active_worksheet and not self.excel_sheet:
-                messagebox.showwarning("警告", "請先連接Excel，然後重新載入配置")
+                messagebox.showwarning("警告", "請先連接Excel，然後重新套用配置")
                 return
 
             # 自動重新掃描空格（基於目標欄位）
@@ -819,12 +948,11 @@ class SmartExcelMapper:
             if 'selected_elements' in config_data and self.csv_data:
                 self.auto_select_elements(config_data['selected_elements'])
 
-            # 移除載入配置成功的彈出視窗
         except Exception as e:
-            messagebox.showerror("錯誤", f"載入配置失敗：{str(e)}")
+            messagebox.showerror("錯誤", f"套用配置失敗：{str(e)}")
 
     def load_configs(self):
-        """載入保存的配置"""
+        """套用保存的配置"""
         try:
             if os.path.exists('field_mappings.json'):
                 with open('field_mappings.json', 'r', encoding='utf-8') as f:
@@ -840,9 +968,11 @@ class SmartExcelMapper:
         config_names = list(self.field_mappings.keys())
         self.config_combo['values'] = config_names
 
-        # 如果有配置但當前沒選中任何，選中第一個
-        if config_names and not self.config_var.get():
-            self.config_var.set(config_names[0])
+        # 不自動選擇配置，讓使用者手動選擇
+        # 如果當前選中的配置不存在於列表中，清空選擇
+        current_config = self.config_var.get()
+        if current_config and current_config not in config_names:
+            self.config_var.set('')
 
     def auto_select_elements(self, selected_elements):
         """根據配置自動選中對應的CSV元素"""
