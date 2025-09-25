@@ -112,16 +112,37 @@ class SmartExcelMapper:
                                            value=False, command=self.toggle_connection_mode)
         self.manual_radio.pack(side=tk.LEFT)
 
-        # Excel狀態顯示
-        status_frame = ttk.Frame(excel_group)
-        status_frame.pack(side=tk.TOP, anchor=tk.W, pady=(5, 0))
+        # 隱藏的Excel狀態（僅供內部使用）
+        self.excel_status = ttk.Label(mode_frame, text="正在嘗試連接Excel...", foreground="orange")
+        # 不要pack，保持隱藏狀態
 
-        self.excel_status = ttk.Label(status_frame, text="正在嘗試連接Excel...", foreground="orange")
-        self.excel_status.pack(side=tk.LEFT)
-
-        # 執行映射按鈕（右上角大方形）
+        # 執行映射區域（右側）
         execute_main_group = ttk.Frame(row1)
         execute_main_group.pack(side=tk.RIGHT)
+
+        # 檔案名稱顯示區域（加長版，緊貼執行映射左側）
+        file_info_group = ttk.LabelFrame(execute_main_group, text="當前檔案", padding=5)
+        file_info_group.pack(side=tk.LEFT, padx=(0, 10))
+
+        # 固定寬度的框架
+        file_info_frame = ttk.Frame(file_info_group)
+        file_info_frame.pack()
+
+        # CSV檔案名稱顯示（加長）
+        csv_name_frame = ttk.Frame(file_info_frame)
+        csv_name_frame.pack(pady=(0, 5))
+        ttk.Label(csv_name_frame, text="CSV:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT)
+        self.csv_name_label = ttk.Label(csv_name_frame, text="未載入",
+                                       font=('Arial', 9), foreground="gray", width=35)
+        self.csv_name_label.pack(side=tk.LEFT, padx=(5, 0))
+
+        # Excel檔案名稱顯示（加長）
+        excel_name_frame = ttk.Frame(file_info_frame)
+        excel_name_frame.pack()
+        ttk.Label(excel_name_frame, text="Excel:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT)
+        self.excel_name_label = ttk.Label(excel_name_frame, text="未連接",
+                                         font=('Arial', 9), foreground="gray", width=33)
+        self.excel_name_label.pack(side=tk.LEFT, padx=(5, 0))
 
         # 創建執行映射按鈕（大的方形，醒目顏色）
         self.execute_btn = tk.Button(execute_main_group, text="執行映射",
@@ -162,7 +183,6 @@ class SmartExcelMapper:
         config_buttons = ttk.Frame(config_group)
         config_buttons.pack(side=tk.LEFT)
 
-        ttk.Button(config_buttons, text="套用", command=self.load_config, width=10).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(config_buttons, text="刪除", command=self.delete_config, width=10).pack(side=tk.LEFT)
 
         # 新配置管理
@@ -202,8 +222,10 @@ class SmartExcelMapper:
         # 建立Treeview表格
         self.csv_tree = ttk.Treeview(csv_table_frame, selectmode="extended", height=25)
         csv_scroll_y = ttk.Scrollbar(csv_table_frame, orient=tk.VERTICAL, command=self.csv_tree.yview)
-        csv_scroll_x = ttk.Scrollbar(csv_table_frame, orient=tk.HORIZONTAL, command=self.csv_tree.xview)
-        self.csv_tree.configure(yscrollcommand=csv_scroll_y.set, xscrollcommand=csv_scroll_x.set)
+        # 移除橫向滾動條
+        # csv_scroll_x = ttk.Scrollbar(csv_table_frame, orient=tk.HORIZONTAL, command=self.csv_tree.xview)
+        self.csv_tree.configure(yscrollcommand=csv_scroll_y.set)
+        # self.csv_tree.configure(xscrollcommand=csv_scroll_x.set)
 
         # 綁定點擊事件，實現單擊切換選取狀態
         self.csv_tree.bind('<Button-1>', self.on_tree_click)
@@ -225,7 +247,8 @@ class SmartExcelMapper:
 
         self.csv_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         csv_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
-        csv_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+        # 移除橫向滾動條
+        # csv_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
 
         # 選取數量顯示
         csv_info_frame = ttk.Frame(csv_frame)
@@ -319,6 +342,8 @@ class SmartExcelMapper:
             if selection:
                 selected_config = config_listbox.get(selection[0])
                 self.config_var.set(selected_config)
+                # 自動套用選中的配置
+                self.load_config()
             self.config_popup.destroy()
             self.config_popup = None
 
@@ -326,10 +351,10 @@ class SmartExcelMapper:
             self.config_popup.destroy()
             self.config_popup = None
 
-        ttk.Button(button_frame, text="確定", command=on_select).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(button_frame, text="取消", command=on_cancel).pack(side=tk.LEFT)
+        ttk.Button(button_frame, text="取消", command=on_cancel).pack(side=tk.RIGHT)
+        ttk.Button(button_frame, text="確定", command=on_select).pack(side=tk.RIGHT)
 
-        # 綁定雙擊事件
+        # 綁定雙擊事件（自動套用配置）
         config_listbox.bind('<Double-Button-1>', lambda e: on_select())
 
         # 綁定ESC鍵關閉
@@ -356,14 +381,14 @@ class SmartExcelMapper:
                     reader = csv.DictReader(f)
                     self.csv_data = list(reader)
 
+                # 更新CSV檔案名稱顯示
+                csv_filename = os.path.basename(file_path)
+                self.csv_name_label.config(text=csv_filename, foreground="black")
+
                 self.display_csv_data()
 
-                # 如果有選中的配置，自動應用
-                current_config = self.config_var.get().strip()
-                if (current_config and
-                    current_config in self.field_mappings and
-                    'selected_elements' in self.field_mappings[current_config]):
-                    self.auto_select_elements(self.field_mappings[current_config]['selected_elements'])
+                # 自動套用當前選中的配置
+                self.auto_apply_current_config()
 
                 # 移除CSV載入成功的彈出視窗
 
@@ -465,6 +490,8 @@ class SmartExcelMapper:
             if self.active_workbook:
                 workbook_name = self.active_workbook.Name
                 self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
+                # 更新Excel檔案名稱顯示
+                self.excel_name_label.config(text=workbook_name, foreground="black")
                 self.load_excel_data()
             else:
                 raise Exception("沒有開啟的工作簿")
@@ -472,9 +499,9 @@ class SmartExcelMapper:
         except:
             # 靜默失敗，在自動模式下顯示等待狀態
             if self.auto_detect_mode:
-                self.excel_status.config(text="等待Excel開啟...", foreground="orange")
+                self.excel_name_label.config(text="等待中", foreground="gray")
             else:
-                self.excel_status.config(text="未連接Excel", foreground="red")
+                self.excel_name_label.config(text="未連接", foreground="gray")
 
     def start_excel_monitoring(self):
         """開始監控Excel狀態"""
@@ -533,17 +560,21 @@ class SmartExcelMapper:
                 # 更新實例變數
                 self.active_workbook = active_workbook
                 self.active_worksheet = excel_app.ActiveSheet
+                # 更新Excel檔案名稱顯示
+                self.excel_name_label.config(text=workbook_name, foreground="black")
                 return f"已連接: {workbook_name}"
             else:
                 # Excel開啟但沒有工作簿
                 self.active_workbook = None
                 self.active_worksheet = None
+                self.excel_name_label.config(text="無工作簿", foreground="gray")
                 return "Excel已開啟但無工作簿"
 
         except:
             # Excel未開啟或連接失敗
             self.active_workbook = None
             self.active_worksheet = None
+            self.excel_name_label.config(text="未連接", foreground="gray")
             # 在自動模式下顯示等待，手動模式顯示未連接
             if self.auto_detect_mode:
                 return "等待Excel開啟..."
@@ -552,8 +583,10 @@ class SmartExcelMapper:
 
         # 在自動模式下顯示等待，手動模式顯示未連接
         if self.auto_detect_mode:
+            self.excel_name_label.config(text="等待中", foreground="gray")
             return "等待Excel開啟..."
         else:
+            self.excel_name_label.config(text="未連接", foreground="gray")
             return "未連接Excel"
 
     def auto_rescan_on_reconnect(self):
@@ -579,13 +612,12 @@ class SmartExcelMapper:
         if self.auto_detect_mode:
             # 切換到自動偵測模式
             self.manual_connect_btn.pack_forget()  # 隱藏手動連接按鈕
-            self.excel_status.config(text="正在嘗試連接Excel...", foreground="orange")
             # 立即嘗試自動連接
             self.root.after(100, self.auto_connect_excel)
         else:
             # 切換到手動選取模式 - 在檔案群組中顯示連接按鈕
             self.manual_connect_btn.pack(side=tk.LEFT)
-            self.excel_status.config(text="手動模式 - 點擊連接Excel", foreground="blue")
+            self.excel_name_label.config(text="未連接", foreground="gray")
 
     def connect_excel(self):
         """手動連接Excel"""
@@ -608,6 +640,8 @@ class SmartExcelMapper:
 
             workbook_name = self.active_workbook.Name
             self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
+            # 更新Excel檔案名稱顯示
+            self.excel_name_label.config(text=workbook_name, foreground="black")
             self.load_excel_data()
             # 移除連接成功的彈出視窗
 
@@ -638,6 +672,8 @@ class SmartExcelMapper:
                     self.excel_sheet = self.excel_workbook.active
                     filename = os.path.basename(file_path)
                     self.excel_status.config(text=f"已載入: {filename}", foreground="blue")
+                    # 更新Excel檔案名稱顯示
+                    self.excel_name_label.config(text=filename, foreground="blue")
                     self.load_excel_data()
                     # 移除載入成功的彈出視窗
                 except Exception as e:
@@ -906,6 +942,10 @@ class SmartExcelMapper:
                 self.csv_tree.delete(item)
             self.csv_tree.selection_remove(self.csv_tree.selection())
             self.csv_selection_label.config(text="已選取: 0 個元素")
+            # 重置CSV檔案名稱顯示
+            self.csv_name_label.config(text="未載入", foreground="gray")
+            # 重置匹配狀態顯示
+            self.update_match_status()
 
         except Exception as e:
             messagebox.showerror("錯誤", f"執行映射失敗：{str(e)}")
@@ -990,6 +1030,35 @@ class SmartExcelMapper:
         current_config = self.config_var.get()
         if current_config and current_config not in config_names:
             self.config_var.set('')
+
+    def auto_apply_current_config(self):
+        """載入CSV時自動套用當前選中的配置"""
+        try:
+            current_config = self.config_var.get().strip()
+            if not current_config or current_config not in self.field_mappings:
+                return  # 沒有選中配置或配置不存在，自動忽略
+
+            config_data = self.field_mappings[current_config]
+
+            # 設定目標欄位
+            if 'field_name' in config_data:
+                self.field_var.set(config_data['field_name'])
+
+            # 如果Excel已連接，嘗試掃描空格
+            if self.active_worksheet or self.excel_sheet:
+                try:
+                    self.scan_empty_cells()
+                except:
+                    # 掃描失敗時自動忽略
+                    pass
+
+            # 自動選中對應的CSV元素
+            if 'selected_elements' in config_data and self.csv_data:
+                self.auto_select_elements(config_data['selected_elements'])
+
+        except Exception:
+            # 任何錯誤都自動忽略，不打擾使用者
+            pass
 
     def auto_select_elements(self, selected_elements):
         """根據配置自動選中對應的CSV元素"""
