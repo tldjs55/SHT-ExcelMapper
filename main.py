@@ -156,13 +156,13 @@ class SmartExcelMapper:
                                     cursor="hand2")
         self.execute_btn.pack(side=tk.LEFT, padx=5, pady=5)
 
-        # 第二行：配置管理
+        # 第二行：配置管理 - 三區域分佈
         row2 = ttk.Frame(control_frame)
         row2.pack(fill=tk.X, pady=(0, 10))
 
-        # 當前配置
+        # 當前配置區域（最左邊）
         config_group = ttk.Frame(row2)
-        config_group.pack(side=tk.LEFT, padx=(0, 30))
+        config_group.pack(side=tk.LEFT)
 
         ttk.Label(config_group, text="配置:").pack(side=tk.LEFT)
 
@@ -186,27 +186,27 @@ class SmartExcelMapper:
 
         ttk.Button(config_buttons, text="刪除", command=self.delete_config, width=10).pack(side=tk.LEFT)
 
-        # 新配置管理
-        new_config_group = ttk.Frame(row2)
-        new_config_group.pack(side=tk.LEFT, padx=(0, 30))
-
-        ttk.Label(new_config_group, text="新配置:").pack(side=tk.LEFT)
-        ttk.Entry(new_config_group, textvariable=self.new_config_var, width=15).pack(side=tk.LEFT, padx=(5, 5))
-        ttk.Button(new_config_group, text="保存", command=self.save_config, width=10).pack(side=tk.LEFT)
-
-        # 目標欄位與掃描空格群組
+        # 目標欄位與掃描空格區域（最右邊）
         field_scan_group = ttk.Frame(row2)
-        field_scan_group.pack(side=tk.LEFT)
+        field_scan_group.pack(side=tk.RIGHT)
 
         # 目標欄位
         field_frame = ttk.Frame(field_scan_group)
         field_frame.pack(side=tk.LEFT, padx=(0, 10))
 
         ttk.Label(field_frame, text="目標欄位:").pack(side=tk.LEFT)
-        ttk.Entry(field_frame, textvariable=self.field_var, width=25).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Entry(field_frame, textvariable=self.field_var, width=20).pack(side=tk.LEFT, padx=(5, 0))
 
         # 掃描空格按鈕
         ttk.Button(field_scan_group, text="掃描空格", command=self.scan_empty_cells, width=10).pack(side=tk.LEFT)
+
+        # 新配置管理區域（置中）
+        new_config_group = ttk.Frame(row2)
+        new_config_group.pack(expand=True)
+
+        ttk.Label(new_config_group, text="新配置:").pack(side=tk.LEFT)
+        ttk.Entry(new_config_group, textvariable=self.new_config_var, width=20).pack(side=tk.LEFT, padx=(5, 5))
+        ttk.Button(new_config_group, text="保存", command=self.save_config, width=10).pack(side=tk.LEFT)
 
         # =================== 主工作區 ===================
         work_frame = ttk.Frame(main_frame)
