@@ -14,18 +14,19 @@ import platform
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
-# 根據平台導入
-if platform.system() == "Windows":
-    try:
-        import win32com.client
-        WINDOWS_COM_AVAILABLE = True
-    except ImportError:
-        WINDOWS_COM_AVAILABLE = False
-else:
+# 平台和配置常量
+try:
+    import win32com.client
+    WINDOWS_COM_AVAILABLE = platform.system() == "Windows"
+except ImportError:
     WINDOWS_COM_AVAILABLE = False
 
 FIELD_MAPPING_DIR = os.path.expanduser("~/documents/field_mappings")
 FIELD_MAPPING_PATH = os.path.join(FIELD_MAPPING_DIR, "field_mappings.json")
+
+# UI常量
+MAX_HORIZONTAL_SCAN_RANGE = 4
+MAX_VERTICAL_SCAN_RANGE = 8
 
 class SmartExcelMapper:
     """Excel映射工具"""
@@ -131,18 +132,18 @@ class SmartExcelMapper:
         # CSV檔案名稱顯示（加長）
         csv_name_frame = ttk.Frame(file_info_frame)
         csv_name_frame.pack(pady=(0, 5))
-        ttk.Label(csv_name_frame, text="CSV:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT)
+        ttk.Label(csv_name_frame, text="CSV  :", font=('Arial', 9, 'bold')).pack(side=tk.LEFT)
         self.csv_name_label = ttk.Label(csv_name_frame, text="未載入",
                                        font=('Arial', 9), foreground="gray", width=35)
-        self.csv_name_label.pack(side=tk.LEFT, padx=(5, 0))
+        self.csv_name_label.pack(side=tk.LEFT, padx=(8, 0))
 
         # Excel檔案名稱顯示（加長）
         excel_name_frame = ttk.Frame(file_info_frame)
         excel_name_frame.pack()
         ttk.Label(excel_name_frame, text="Excel:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT)
         self.excel_name_label = ttk.Label(excel_name_frame, text="未連接",
-                                         font=('Arial', 9), foreground="gray", width=33)
-        self.excel_name_label.pack(side=tk.LEFT, padx=(5, 0))
+                                         font=('Arial', 9), foreground="gray", width=35)
+        self.excel_name_label.pack(side=tk.LEFT, padx=(8, 0))
 
         # 創建執行映射按鈕（大的方形，醒目顏色）
         self.execute_btn = tk.Button(execute_main_group, text="執行映射",
@@ -195,7 +196,7 @@ class SmartExcelMapper:
 
         # 目標欄位與掃描空格群組
         field_scan_group = ttk.Frame(row2)
-        field_scan_group.pack(side=tk.RIGHT)
+        field_scan_group.pack(side=tk.LEFT)
 
         # 目標欄位
         field_frame = ttk.Frame(field_scan_group)
@@ -222,10 +223,7 @@ class SmartExcelMapper:
         # 建立Treeview表格
         self.csv_tree = ttk.Treeview(csv_table_frame, selectmode="extended", height=25)
         csv_scroll_y = ttk.Scrollbar(csv_table_frame, orient=tk.VERTICAL, command=self.csv_tree.yview)
-        # 移除橫向滾動條
-        # csv_scroll_x = ttk.Scrollbar(csv_table_frame, orient=tk.HORIZONTAL, command=self.csv_tree.xview)
         self.csv_tree.configure(yscrollcommand=csv_scroll_y.set)
-        # self.csv_tree.configure(xscrollcommand=csv_scroll_x.set)
 
         # 綁定點擊事件，實現單擊切換選取狀態
         self.csv_tree.bind('<Button-1>', self.on_tree_click)
@@ -247,8 +245,6 @@ class SmartExcelMapper:
 
         self.csv_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         csv_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
-        # 移除橫向滾動條
-        # csv_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
 
         # 選取數量顯示
         csv_info_frame = ttk.Frame(csv_frame)
@@ -390,8 +386,6 @@ class SmartExcelMapper:
                 # 自動套用當前選中的配置
                 self.auto_apply_current_config()
 
-                # 移除CSV載入成功的彈出視窗
-
             except Exception as e:
                 messagebox.showerror("錯誤", f"載入CSV失敗：{str(e)}")
 
@@ -417,8 +411,8 @@ class SmartExcelMapper:
                 use_value = str(actual).strip()
 
             # 顯示格式化的值
-            dev_display = str(dev) if dev and str(dev).strip() else '-'
-            actual_display = str(actual) if actual and str(actual).strip() else '-'
+            dev_display = self.get_display_value(dev)
+            actual_display = self.get_display_value(actual)
             value_display = use_value if use_value else '-'
 
             self.csv_tree.insert('', 'end', values=(element, dev_display, actual_display, value_display))
@@ -471,6 +465,18 @@ class SmartExcelMapper:
         else:
             self.match_status_label.config(text=f"數量不匹配 ({selected_count}/{spaces_count})", foreground="red")
 
+    def update_excel_name_display(self, name, color="black"):
+        """統一更新Excel檔案名稱顯示"""
+        self.excel_name_label.config(text=name, foreground=color)
+
+    def is_cell_empty(self, cell_value):
+        """檢查儲存格是否為空"""
+        return cell_value is None or str(cell_value).strip() == ''
+
+    def get_display_value(self, value):
+        """獲取顯示用的值"""
+        return str(value) if value and str(value).strip() else '-'
+
     def get_excel_column_name(self, col_index):
         """將數字索引轉換為Excel列名（A, B, ..., Z, AA, AB, ...）"""
         column_name = ""
@@ -490,8 +496,7 @@ class SmartExcelMapper:
             if self.active_workbook:
                 workbook_name = self.active_workbook.Name
                 self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
-                # 更新Excel檔案名稱顯示
-                self.excel_name_label.config(text=workbook_name, foreground="black")
+                self.update_excel_name_display(workbook_name)
                 self.load_excel_data()
             else:
                 raise Exception("沒有開啟的工作簿")
@@ -499,9 +504,9 @@ class SmartExcelMapper:
         except:
             # 靜默失敗，在自動模式下顯示等待狀態
             if self.auto_detect_mode:
-                self.excel_name_label.config(text="等待中", foreground="gray")
+                self.update_excel_name_display("等待中", "gray")
             else:
-                self.excel_name_label.config(text="未連接", foreground="gray")
+                self.update_excel_name_display("未連接", "gray")
 
     def start_excel_monitoring(self):
         """開始監控Excel狀態"""
@@ -560,21 +565,20 @@ class SmartExcelMapper:
                 # 更新實例變數
                 self.active_workbook = active_workbook
                 self.active_worksheet = excel_app.ActiveSheet
-                # 更新Excel檔案名稱顯示
-                self.excel_name_label.config(text=workbook_name, foreground="black")
+                self.update_excel_name_display(workbook_name)
                 return f"已連接: {workbook_name}"
             else:
                 # Excel開啟但沒有工作簿
                 self.active_workbook = None
                 self.active_worksheet = None
-                self.excel_name_label.config(text="無工作簿", foreground="gray")
+                self.update_excel_name_display("無工作簿", "gray")
                 return "Excel已開啟但無工作簿"
 
         except:
             # Excel未開啟或連接失敗
             self.active_workbook = None
             self.active_worksheet = None
-            self.excel_name_label.config(text="未連接", foreground="gray")
+            self.update_excel_name_display("未連接", "gray")
             # 在自動模式下顯示等待，手動模式顯示未連接
             if self.auto_detect_mode:
                 return "等待Excel開啟..."
@@ -583,10 +587,10 @@ class SmartExcelMapper:
 
         # 在自動模式下顯示等待，手動模式顯示未連接
         if self.auto_detect_mode:
-            self.excel_name_label.config(text="等待中", foreground="gray")
+            self.update_excel_name_display("等待中", "gray")
             return "等待Excel開啟..."
         else:
-            self.excel_name_label.config(text="未連接", foreground="gray")
+            self.update_excel_name_display("未連接", "gray")
             return "未連接Excel"
 
     def auto_rescan_on_reconnect(self):
@@ -617,7 +621,7 @@ class SmartExcelMapper:
         else:
             # 切換到手動選取模式 - 在檔案群組中顯示連接按鈕
             self.manual_connect_btn.pack(side=tk.LEFT)
-            self.excel_name_label.config(text="未連接", foreground="gray")
+            self.update_excel_name_display("未連接", "gray")
 
     def connect_excel(self):
         """手動連接Excel"""
@@ -640,10 +644,8 @@ class SmartExcelMapper:
 
             workbook_name = self.active_workbook.Name
             self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
-            # 更新Excel檔案名稱顯示
-            self.excel_name_label.config(text=workbook_name, foreground="black")
+            self.update_excel_name_display(workbook_name)
             self.load_excel_data()
-            # 移除連接成功的彈出視窗
 
         except Exception as e:
             # 在自動模式下，不做任何操作，讓監控繼續等待Excel開啟
@@ -672,10 +674,8 @@ class SmartExcelMapper:
                     self.excel_sheet = self.excel_workbook.active
                     filename = os.path.basename(file_path)
                     self.excel_status.config(text=f"已載入: {filename}", foreground="blue")
-                    # 更新Excel檔案名稱顯示
-                    self.excel_name_label.config(text=filename, foreground="blue")
+                    self.update_excel_name_display(filename, "blue")
                     self.load_excel_data()
-                    # 移除載入成功的彈出視窗
                 except Exception as e:
                     messagebox.showerror("錯誤", f"載入Excel失敗：{str(e)}")
 
@@ -707,6 +707,72 @@ class SmartExcelMapper:
         except Exception as e:
             messagebox.showerror("錯誤", f"載入Excel數據失敗：{str(e)}")
 
+    def find_field_position(self, field_name):
+        """尋找欄位位置"""
+        for row_idx, row in enumerate(self.excel_data):
+            for col_idx, cell in enumerate(row):
+                if cell and field_name in str(cell):
+                    return (row_idx, col_idx)
+        return None
+
+    def scan_vertical_empty_cells(self, field_row, field_col):
+        """垂直掃描空格"""
+        empty_cells = []
+        current_row = field_row + 1
+
+        while current_row < len(self.excel_data):
+            row_empty_count = 0
+            row_has_content = False
+
+            for col_offset in range(MAX_HORIZONTAL_SCAN_RANGE):
+                check_col = field_col + col_offset
+                if check_col < len(self.excel_data[current_row]):
+                    cell_value = self.excel_data[current_row][check_col]
+                    cell_str = str(cell_value).strip() if cell_value is not None else ''
+
+                    if not self.is_cell_empty(cell_value):
+                        row_has_content = True
+                        break
+
+                    col_letter = self.get_excel_column_name(check_col)
+                    cell_position = f"{col_letter}{current_row + 1}"
+                    empty_cells.append({
+                        'position': cell_position,
+                        'row': current_row,
+                        'col': check_col,
+                        'value': cell_value
+                    })
+                    row_empty_count += 1
+                else:
+                    break
+
+            if row_has_content or row_empty_count == 0:
+                break
+
+            current_row += 1
+
+        return empty_cells
+
+    def scan_horizontal_empty_cells(self, field_row, field_col):
+        """水平掃描空格"""
+        empty_cells = []
+        for col_offset in range(1, MAX_VERTICAL_SCAN_RANGE):
+            check_col = field_col + col_offset
+            check_row = field_row + 1
+            if (check_row < len(self.excel_data) and
+                check_col < len(self.excel_data[check_row])):
+                cell_value = self.excel_data[check_row][check_col]
+                if self.is_cell_empty(cell_value):
+                    col_letter = self.get_excel_column_name(check_col)
+                    cell_position = f"{col_letter}{check_row + 1}"
+                    empty_cells.append({
+                        'position': cell_position,
+                        'row': check_row,
+                        'col': check_col,
+                        'value': cell_value
+                    })
+        return empty_cells
+
     def scan_empty_cells(self):
         """掃描空格"""
         field_name = self.field_var.get().strip()
@@ -719,91 +785,22 @@ class SmartExcelMapper:
             return
 
         try:
-            # 搜尋欄位標題
-            field_position = None
-            for row_idx, row in enumerate(self.excel_data):
-                for col_idx, cell in enumerate(row):
-                    if cell and field_name in str(cell):
-                        field_position = (row_idx, col_idx)
-                        break
-                if field_position:
-                    break
-
+            field_position = self.find_field_position(field_name)
             if not field_position:
                 messagebox.showwarning("警告", f"找不到欄位: {field_name}")
                 return
 
-            # 掃描該欄位下方的空格
             field_row, field_col = field_position
-            empty_cells = []
-
-            # 掃描該欄位下方的空格，遇到非空格就停止
-            current_row = field_row + 1
-
-            while current_row < len(self.excel_data):
-                # 檢查當前行的空格（橫向，最多4個）
-                row_empty_count = 0
-                row_has_content = False
-
-                for col_offset in range(4):  # 每行最多4個空格
-                    check_col = field_col + col_offset
-                    if check_col < len(self.excel_data[current_row]):
-                        cell_value = self.excel_data[current_row][check_col]
-                        cell_str = str(cell_value).strip() if cell_value is not None else ''
-
-                        # 如果遇到非空格內容，停止這一行的掃描
-                        if cell_str != '':
-                            row_has_content = True
-                            break
-
-                        # 如果是空格，加入列表
-                        if cell_value is None or cell_str == '':
-                            col_letter = self.get_excel_column_name(check_col)
-                            cell_position = f"{col_letter}{current_row + 1}"
-                            empty_cells.append({
-                                'position': cell_position,
-                                'row': current_row,
-                                'col': check_col,
-                                'value': cell_value
-                            })
-                            row_empty_count += 1
-                    else:
-                        break
-
-                # 如果這一行有非空格內容，或者沒有找到空格，就停止掃描
-                if row_has_content or row_empty_count == 0:
-                    break
-
-                current_row += 1
+            empty_cells = self.scan_vertical_empty_cells(field_row, field_col)
 
             if not empty_cells:
-                # 如果沒找到空格，檢查橫向的空格
-                for col_offset in range(1, 8):
-                    check_col = field_col + col_offset
-                    check_row = field_row + 1  # 下一行
-                    if (check_row < len(self.excel_data) and
-                        check_col < len(self.excel_data[check_row])):
-                        cell_value = self.excel_data[check_row][check_col]
-                        if cell_value is None or str(cell_value).strip() == '':
-                            col_letter = self.get_excel_column_name(check_col)
-                            cell_position = f"{col_letter}{check_row + 1}"
-                            empty_cells.append({
-                                'position': cell_position,
-                                'row': check_row,
-                                'col': check_col,
-                                'value': cell_value
-                            })
+                empty_cells = self.scan_horizontal_empty_cells(field_row, field_col)
 
             self.empty_cells = empty_cells
             self.display_empty_cells_info()
-
-            # 更新空格數量顯示
             self.spaces_count_label.config(text=f"找到空格: {len(empty_cells)} 個")
-
-            # 更新匹配狀態
             self.update_match_status()
 
-            # 移除掃描成功的彈出視窗，只在沒找到時顯示警告
             if not empty_cells:
                 messagebox.showwarning("警告", f"在欄位 '{field_name}' 下方沒有找到空白位置")
 
@@ -942,9 +939,7 @@ class SmartExcelMapper:
                 self.csv_tree.delete(item)
             self.csv_tree.selection_remove(self.csv_tree.selection())
             self.csv_selection_label.config(text="已選取: 0 個元素")
-            # 重置CSV檔案名稱顯示
             self.csv_name_label.config(text="未載入", foreground="gray")
-            # 重置匹配狀態顯示
             self.update_match_status()
 
         except Exception as e:
@@ -1085,7 +1080,6 @@ class SmartExcelMapper:
             self.csv_tree.selection_set(selected_items)
             self.update_selection_info()
 
-            # 移除自動選中的彈出視窗
 
     def delete_config(self):
         """刪除配置"""
@@ -1112,10 +1106,7 @@ class SmartExcelMapper:
             # 清空當前選擇
             self.config_var.set('')
 
-            # 更新配置列表
             self.update_config_list()
-
-            # 移除刪除配置成功的彈出視窗
         except Exception as e:
             messagebox.showerror("錯誤", f"刪除配置失敗：{str(e)}")
 
