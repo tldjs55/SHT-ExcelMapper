@@ -33,7 +33,7 @@ class SmartExcelMapper:
 
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Excel Mapper")
+        self.root.title("RATC Excel Mapper")
         self.root.geometry("1400x800")
 
         # 數據存儲
@@ -74,6 +74,12 @@ class SmartExcelMapper:
 
     def setup_ui(self):
         """設置界面"""
+        # 設置自定義樣式
+        style = ttk.Style()
+        style.configure("Large.TButton", font=('Arial', 10), padding=6)
+        style.configure("Large.TLabel", font=('Arial', 10))
+        style.configure("Large.TRadiobutton", font=('Arial', 10))
+
         # 主框架
         main_frame = ttk.Frame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -90,10 +96,12 @@ class SmartExcelMapper:
         file_group = ttk.Frame(row1)
         file_group.pack(side=tk.LEFT, padx=(0, 30))
 
-        self.csv_btn = ttk.Button(file_group, text="載入CSV", command=self.load_csv, width=10)
+        self.csv_btn = ttk.Button(file_group, text="載入CSV", command=self.load_csv, width=12,
+                                 style="Large.TButton")
         self.csv_btn.pack(side=tk.LEFT, padx=(0, 10))
 
-        self.manual_connect_btn = ttk.Button(file_group, text="連接Excel", command=self.connect_excel, width=10)
+        self.manual_connect_btn = ttk.Button(file_group, text="連接Excel", command=self.connect_excel, width=12,
+                                            style="Large.TButton")
         # 預設不顯示，由toggle_connection_mode控制
 
         # Excel模式和狀態群組
@@ -106,11 +114,13 @@ class SmartExcelMapper:
 
         self.mode_var = tk.BooleanVar(value=True)
         self.auto_radio = ttk.Radiobutton(mode_frame, text="自動偵測", variable=self.mode_var,
-                                         value=True, command=self.toggle_connection_mode)
+                                         value=True, command=self.toggle_connection_mode,
+                                         style="Large.TRadiobutton")
         self.auto_radio.pack(side=tk.LEFT, padx=(0, 15))
 
         self.manual_radio = ttk.Radiobutton(mode_frame, text="手動選取", variable=self.mode_var,
-                                           value=False, command=self.toggle_connection_mode)
+                                           value=False, command=self.toggle_connection_mode,
+                                           style="Large.TRadiobutton")
         self.manual_radio.pack(side=tk.LEFT)
 
         # 隱藏的Excel狀態（僅供內部使用）
@@ -132,17 +142,17 @@ class SmartExcelMapper:
         # CSV檔案名稱顯示（加長）
         csv_name_frame = ttk.Frame(file_info_frame)
         csv_name_frame.pack(pady=(0, 5))
-        ttk.Label(csv_name_frame, text="CSV  :", font=('Arial', 9, 'bold')).pack(side=tk.LEFT)
+        ttk.Label(csv_name_frame, text="CSV  :", font=('Arial', 10, 'bold')).pack(side=tk.LEFT)
         self.csv_name_label = ttk.Label(csv_name_frame, text="未載入",
-                                       font=('Arial', 9), foreground="gray", width=35)
+                                       font=('Arial', 10), foreground="gray", width=35)
         self.csv_name_label.pack(side=tk.LEFT, padx=(8, 0))
 
         # Excel檔案名稱顯示（加長）
         excel_name_frame = ttk.Frame(file_info_frame)
         excel_name_frame.pack()
-        ttk.Label(excel_name_frame, text="Excel:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT)
+        ttk.Label(excel_name_frame, text="Excel:", font=('Arial', 10, 'bold')).pack(side=tk.LEFT)
         self.excel_name_label = ttk.Label(excel_name_frame, text="未連接",
-                                         font=('Arial', 9), foreground="gray", width=35)
+                                         font=('Arial', 10), foreground="gray", width=35)
         self.excel_name_label.pack(side=tk.LEFT, padx=(8, 0))
 
         # 創建執行映射按鈕（大的方形，醒目顏色）
@@ -164,12 +174,13 @@ class SmartExcelMapper:
         config_group = ttk.Frame(row2)
         config_group.pack(side=tk.LEFT)
 
-        ttk.Label(config_group, text="配置:").pack(side=tk.LEFT)
+        ttk.Label(config_group, text="配置:", style="Large.TLabel").pack(side=tk.LEFT)
 
         config_click_frame = ttk.Frame(config_group)
         config_click_frame.pack(side=tk.LEFT, padx=(5, 10))
 
-        self.config_display = ttk.Entry(config_click_frame, textvariable=self.config_var, state='readonly', width=20)
+        self.config_display = ttk.Entry(config_click_frame, textvariable=self.config_var, state='readonly',
+                                        width=25, font=('Arial', 10))
         self.config_display.pack(side=tk.LEFT)
 
         # 隱藏的Combobox
@@ -184,7 +195,8 @@ class SmartExcelMapper:
         config_buttons = ttk.Frame(config_group)
         config_buttons.pack(side=tk.LEFT)
 
-        ttk.Button(config_buttons, text="刪除", command=self.delete_config, width=10).pack(side=tk.LEFT)
+        ttk.Button(config_buttons, text="刪除", command=self.delete_config, width=12,
+                   style="Large.TButton").pack(side=tk.LEFT)
 
         # 目標欄位與掃描空格區域（最右邊）
         field_scan_group = ttk.Frame(row2)
@@ -194,19 +206,21 @@ class SmartExcelMapper:
         field_frame = ttk.Frame(field_scan_group)
         field_frame.pack(side=tk.LEFT, padx=(0, 10))
 
-        ttk.Label(field_frame, text="目標欄位:").pack(side=tk.LEFT)
-        ttk.Entry(field_frame, textvariable=self.field_var, width=20).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(field_frame, text="目標欄位:", style="Large.TLabel").pack(side=tk.LEFT)
+        ttk.Entry(field_frame, textvariable=self.field_var, width=25, font=('Arial', 10)).pack(side=tk.LEFT, padx=(5, 0))
 
         # 掃描空格按鈕
-        ttk.Button(field_scan_group, text="掃描空格", command=self.scan_empty_cells, width=10).pack(side=tk.LEFT)
+        ttk.Button(field_scan_group, text="掃描空格", command=self.scan_empty_cells, width=12,
+                   style="Large.TButton").pack(side=tk.LEFT)
 
         # 新配置管理區域（置中）
         new_config_group = ttk.Frame(row2)
         new_config_group.pack(expand=True)
 
-        ttk.Label(new_config_group, text="新配置:").pack(side=tk.LEFT)
-        ttk.Entry(new_config_group, textvariable=self.new_config_var, width=20).pack(side=tk.LEFT, padx=(5, 5))
-        ttk.Button(new_config_group, text="保存", command=self.save_config, width=10).pack(side=tk.LEFT)
+        ttk.Label(new_config_group, text="新配置:", style="Large.TLabel").pack(side=tk.LEFT)
+        ttk.Entry(new_config_group, textvariable=self.new_config_var, width=25, font=('Arial', 10)).pack(side=tk.LEFT, padx=(5, 5))
+        ttk.Button(new_config_group, text="保存", command=self.save_config, width=12,
+                   style="Large.TButton").pack(side=tk.LEFT)
 
         # =================== 主工作區 ===================
         work_frame = ttk.Frame(main_frame)
@@ -238,7 +252,7 @@ class SmartExcelMapper:
         self.csv_tree.heading('Actual', text='Actual')
         self.csv_tree.heading('Value', text='使用值')
 
-        self.csv_tree.column('Element', width=200, minwidth=150)
+        self.csv_tree.column('Element', width=80, minwidth=60)
         self.csv_tree.column('Dev', width=80, minwidth=60, anchor='center')
         self.csv_tree.column('Actual', width=80, minwidth=60, anchor='center')
         self.csv_tree.column('Value', width=80, minwidth=60, anchor='center')
@@ -250,11 +264,11 @@ class SmartExcelMapper:
         csv_info_frame = ttk.Frame(csv_frame)
         csv_info_frame.pack(fill=tk.X, pady=(5, 0))
 
-        self.csv_selection_label = ttk.Label(csv_info_frame, text="已選取: 0 個元素", font=('Arial', 10, 'bold'))
+        self.csv_selection_label = ttk.Label(csv_info_frame, text="已選取: 0 個元素", font=('Arial', 11, 'bold'))
         self.csv_selection_label.pack(anchor=tk.W)
 
         # 使用說明
-        csv_help_label = ttk.Label(csv_info_frame, text="操作說明: 點擊選取項目，再次點擊取消選取", font=('Arial', 8), foreground="gray")
+        csv_help_label = ttk.Label(csv_info_frame, text="操作說明: 點擊選取項目，再次點擊取消選取", font=('Arial', 9), foreground="gray")
         csv_help_label.pack(anchor=tk.W)
 
         # 綁定選取事件
@@ -269,11 +283,11 @@ class SmartExcelMapper:
         status_frame.pack(fill=tk.X, pady=(10, 10))
 
         # 空格數量顯示
-        self.spaces_count_label = ttk.Label(status_frame, text="找到空格: 0 個", font=('Arial', 10, 'bold'))
+        self.spaces_count_label = ttk.Label(status_frame, text="找到空格: 0 個", font=('Arial', 11, 'bold'))
         self.spaces_count_label.pack(anchor=tk.W, pady=(0, 5))
 
         # 匹配狀態顯示
-        self.match_status_label = ttk.Label(status_frame, text="數量不匹配", foreground="orange", font=('Arial', 10, 'bold'))
+        self.match_status_label = ttk.Label(status_frame, text="數量不匹配", foreground="orange", font=('Arial', 11, 'bold'))
         self.match_status_label.pack(anchor=tk.W)
 
         # 空格信息詳細顯示
