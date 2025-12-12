@@ -1,0 +1,203 @@
+{
+  "A": {
+    "field_name": "化學後孔壁厚度*",
+    "empty_cells": [
+      {
+        "position": "Y21",
+        "row": 20,
+        "col": 24,
+        "value": null
+      },
+      {
+        "position": "Z21",
+        "row": 20,
+        "col": 25,
+        "value": null
+      },
+      {
+        "position": "AA21",
+        "row": 20,
+        "col": 26,
+        "value": null
+      },
+      {
+        "position": "AB21",
+        "row": 20,
+        "col": 27,
+        "value": null
+      },
+      {
+        "position": "Y22",
+        "row": 21,
+        "col": 24,
+        "value": null
+      },
+      {
+        "position": "Z22",
+        "row": 21,
+        "col": 25,
+        "value": null
+      },
+      {
+        "position": "AA22",
+        "row": 21,
+        "col": 26,
+        "value": null
+      }
+    ],
+    "selected_elements": [
+      {
+        "element": " ???? 1.1",
+        "dev": "2.711",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.2",
+        "dev": "2.748",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.3",
+        "dev": "2.693",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.15",
+        "dev": "2.67",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.16",
+        "dev": "2.773",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.17",
+        "dev": "2.698",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.18",
+        "dev": "2.677",
+        "actual": ""
+      }
+    ]
+  },
+  "B": {
+    "field_name": "粗糙度~",
+    "empty_cells": [
+      {
+        "position": "M17",
+        "row": 16,
+        "col": 12,
+        "value": null
+      },
+      {
+        "position": "N17",
+        "row": 16,
+        "col": 13,
+        "value": null
+      },
+      {
+        "position": "O17",
+        "row": 16,
+        "col": 14,
+        "value": null
+      },
+      {
+        "position": "P17",
+        "row": 16,
+        "col": 15,
+        "value": null
+      },
+      {
+        "position": "M18",
+        "row": 17,
+        "col": 12,
+        "value": null
+      },
+      {
+        "position": "N18",
+        "row": 17,
+        "col": 13,
+        "value": null
+      },
+      {
+        "position": "O18",
+        "row": 17,
+        "col": 14,
+        "value": null
+      },
+      {
+        "position": "P18",
+        "row": 17,
+        "col": 15,
+        "value": null
+      },
+      {
+        "position": "M19",
+        "row": 18,
+        "col": 12,
+        "value": null
+      },
+      {
+        "position": "N19",
+        "row": 18,
+        "col": 13,
+        "value": null
+      }
+    ],
+    "selected_elements": [
+      {
+        "element": " ???? 1.1",
+        "dev": "2.711",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.2",
+        "dev": "2.748",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.3",
+        "dev": "2.693",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.4",
+        "dev": "2.61",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.5",
+        "dev": "2.749",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.6",
+        "dev": "2.709",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.15",
+        "dev": "2.67",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.16",
+        "dev": "2.773",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.17",
+        "dev": "2.698",
+        "actual": ""
+      },
+      {
+        "element": " ???? 1.18",
+        "dev": "2.677",
+        "actual": ""
+      }
+    ]
+  }
+}
