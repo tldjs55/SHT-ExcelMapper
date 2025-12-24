@@ -10,16 +10,10 @@ from tkinter import ttk, filedialog, messagebox
 import csv
 import json
 import os
-import platform
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
+import win32com.client
 
-# 平台和配置常量
-try:
-	import win32com.client
-	WINDOWS_COM_AVAILABLE = platform.system() == "Windows"
-except ImportError:
-	WINDOWS_COM_AVAILABLE = False
 
 FIELD_MAPPING_DIR = os.path.expanduser("~/documents/field_mappings")
 FIELD_MAPPING_PATH = os.path.join(FIELD_MAPPING_DIR, "field_mappings.json")
@@ -229,8 +223,8 @@ class SmartExcelMapper:
 		ttk.Label(second_keyword_group, text="第二關鍵字:", style="Large.TLabel").pack(side=tk.LEFT, padx=(0, 5))
 		ttk.Entry(second_keyword_group, textvariable=self.field_var, width=25, font=('Arial', 10)).pack(side=tk.LEFT)
 
-		# 第四行：掃描空格使用選取範圍區
-		scan_frame = ttk.LabelFrame(control_frame, text="掃描空格 & 手動選取儲存格區", padding=8)
+		# 第四行：獲取空格位置使用選取範圍區
+		scan_frame = ttk.LabelFrame(control_frame, text="獲取空格位置 & 手動選取儲存格區", padding=8)
 		scan_frame.pack(fill=tk.X, pady=(0, 5))
 
 		scan_content = ttk.Frame(scan_frame)
@@ -240,7 +234,7 @@ class SmartExcelMapper:
 		scan_buttons_group = ttk.Frame(scan_content)
 		scan_buttons_group.pack(side=tk.LEFT)
 
-		ttk.Button(scan_buttons_group, text="掃描空格", command=self.scan_empty_cells, width=15,
+		ttk.Button(scan_buttons_group, text="獲取空格位置", command=self.scan_empty_cells, width=15,
 							style="Large.TButton").pack(side=tk.LEFT, padx=(0, 10))
 
 		ttk.Button(scan_buttons_group, text="手動選取儲存格", command=self.scan_selection_range, width=15,
@@ -520,7 +514,7 @@ class SmartExcelMapper:
 		spaces_count = len(self.empty_cells)
 
 		if spaces_count == 0:
-			self.match_status_label.config(text="請先掃描空格", foreground="orange")
+			self.match_status_label.config(text="請先獲取空格位置", foreground="orange")
 		elif selected_count == spaces_count and selected_count > 0:
 			self.match_status_label.config(text="數量匹配，可以執行", foreground="green")
 		elif selected_count == 0:
@@ -551,18 +545,12 @@ class SmartExcelMapper:
 	def auto_connect_excel(self):
 		"""啟動時自動連接Excel（靜默模式）"""
 		try:
-			system = platform.system()
 			excel_app = win32com.client.GetActiveObject("Excel.Application")
 			self.active_workbook = excel_app.ActiveWorkbook
 
 			if self.active_workbook:
 				# 使用當前活動的工作表
-				if system == "Windows":
-					self.active_worksheet = self.active_workbook.ActiveSheet
-				elif system == "Darwin":
-					self.active_worksheet = self.active_workbook.active_sheet
-				else:
-					self.active_worksheet = self.active_workbook.ActiveSheet
+				self.active_worksheet = self.active_workbook.ActiveSheet
 
 				workbook_name = self.active_workbook.Name
 				self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
@@ -602,7 +590,7 @@ class SmartExcelMapper:
 					# Excel重新連接，嘗試載入數據
 					if not current_display.startswith("已連接"):
 						self.load_excel_data()
-						# 如果有配置，自動重新掃描空格
+						# 如果有配置，自動重新獲取空格位置
 						self.auto_rescan_on_reconnect()
 						print(f"Excel狀態變化: {current_display} → {current_status}")
 
@@ -626,7 +614,6 @@ class SmartExcelMapper:
 	def check_excel_status(self):
 		"""檢查Excel當前狀態"""
 		try:
-			system = platform.system()
 			excel_app = win32com.client.GetActiveObject("Excel.Application")
 			active_workbook = excel_app.ActiveWorkbook
 
@@ -634,12 +621,7 @@ class SmartExcelMapper:
 				workbook_name = active_workbook.Name
 				# 更新實例變數，使用當前活動的工作表
 				self.active_workbook = active_workbook
-				if system == "Windows":
-					self.active_worksheet = active_workbook.ActiveSheet
-				elif system == "Darwin":
-					self.active_worksheet = active_workbook.active_sheet
-				else:
-					self.active_worksheet = active_workbook.ActiveSheet
+				self.active_worksheet = active_workbook.ActiveSheet
 
 				self.update_excel_name_display(workbook_name)
 				return f"已連接: {workbook_name}"
@@ -683,7 +665,7 @@ class SmartExcelMapper:
 
 				# 只有在非選取範圍模式下才自動掃描
 				if not use_selection_mode:
-					# 靜默重新掃描空格
+					# 靜默重新獲取空格位置
 					self.scan_empty_cells()
 					print(f"Excel重新連接，已自動重新掃描欄位: {target_field}")
 
@@ -707,17 +689,11 @@ class SmartExcelMapper:
 
 	def connect_excel(self):
 		"""手動連接Excel"""
-		system = platform.system()
-
-		if system == "Windows" and WINDOWS_COM_AVAILABLE:
-			self.connect_excel_windows()
-		else:
-			self.manual_excel_setup()
+		self.connect_excel_windows()
 
 	def connect_excel_windows(self):
 		"""Windows連接"""
 		try:
-			system = platform.system()
 			excel_app = win32com.client.GetActiveObject("Excel.Application")
 			self.active_workbook = excel_app.ActiveWorkbook
 
@@ -725,12 +701,7 @@ class SmartExcelMapper:
 				raise Exception("沒有開啟的工作簿")
 
 			# 使用當前活動的工作表
-			if system == "Windows":
-				self.active_worksheet = self.active_workbook.ActiveSheet
-			elif system == "Darwin":
-				self.active_worksheet = self.active_workbook.active_sheet
-			else:
-				self.active_worksheet = self.active_workbook.ActiveSheet
+			self.active_worksheet = self.active_workbook.ActiveSheet
 
 			workbook_name = self.active_workbook.Name
 			self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
@@ -775,20 +746,12 @@ class SmartExcelMapper:
 		try:
 			if self.active_worksheet:
 				# 從COM接口讀取
-				if platform.system() == "Windows":
-					used_range = self.active_worksheet.UsedRange
-					values = used_range.Value
-					if isinstance(values, tuple):
-						self.excel_data = [list(row) if isinstance(row, tuple) else [row] for row in values]
-					else:
-						self.excel_data = [[values]]
-				elif platform.system() == "Darwin":
-					used_range = self.active_worksheet.used_range
-					values = used_range.value.get()
-					if isinstance(values, list):
-						self.excel_data = values
-					else:
-						self.excel_data = [[values]]
+				used_range = self.active_worksheet.UsedRange
+				values = used_range.Value
+				if isinstance(values, tuple):
+					self.excel_data = [list(row) if isinstance(row, tuple) else [row] for row in values]
+				else:
+					self.excel_data = [[values]]
 			elif self.excel_sheet:
 				# 從openpyxl讀取
 				self.excel_data = []
@@ -817,7 +780,7 @@ class SmartExcelMapper:
 		return None
 
 	def scan_vertical_empty_cells(self, field_row, field_col):
-		"""垂直掃描空格"""
+		"""垂直獲取空格位置"""
 		empty_cells = []
 		current_row = field_row + 1
 
@@ -855,7 +818,7 @@ class SmartExcelMapper:
 		return empty_cells
 
 	def scan_horizontal_empty_cells(self, field_row, field_col):
-		"""水平掃描空格"""
+		"""水平獲取空格位置"""
 		empty_cells = []
 		for col_offset in range(1, MAX_VERTICAL_SCAN_RANGE):
 			check_col = field_col + col_offset
@@ -875,7 +838,7 @@ class SmartExcelMapper:
 		return empty_cells
 
 	def scan_empty_cells(self):
-		"""掃描空格（支援兩段定位）"""
+		"""獲取空格位置（支援兩段定位）"""
 		first_keyword = self.first_keyword_var.get().strip()
 		second_keyword = self.field_var.get().strip()
 
@@ -920,7 +883,7 @@ class SmartExcelMapper:
 
 				field_row, field_col = field_position
 
-			# 3. 在第二個關鍵字下方掃描空格
+			# 3. 在第二個關鍵字下方獲取空格位置
 			empty_cells = self.scan_vertical_empty_cells(field_row, field_col)
 
 			if not empty_cells:
@@ -955,38 +918,17 @@ class SmartExcelMapper:
 				return
 
 			# 獲取選取範圍
-			if platform.system() == "Windows":
-				selection = self.active_worksheet.Application.Selection
-			elif platform.system() == "Darwin":
-				selection = self.active_worksheet.selection
-			else:
-				messagebox.showwarning("警告", "此功能僅支持Windows和macOS系統")
-				return
+			selection = self.active_worksheet.Application.Selection
 
 			empty_cells = []
 
 			# 處理選取範圍
-			if platform.system() == "Windows":
-				# Windows COM API
-				# 處理單個儲存格或範圍
-				try:
-					# 嘗試遍歷選取的儲存格
-					for cell in selection:
-						row_num = cell.Row - 1  # 轉換為0-based索引
-						col_num = cell.Column - 1  # 轉換為0-based索引
-						col_letter = self.get_excel_column_name(col_num)
-						cell_position = f"{col_letter}{row_num + 1}"
-
-						empty_cells.append({
-							'position': cell_position,
-							'row': row_num,
-							'col': col_num,
-							'value': cell.Value
-						})
-				except:
-					# 如果是單個儲存格
-					row_num = selection.Row - 1
-					col_num = selection.Column - 1
+			# 處理單個儲存格或範圍
+			try:
+				# 嘗試遍歷選取的儲存格
+				for cell in selection:
+					row_num = cell.Row - 1  # 轉換為0-based索引
+					col_num = cell.Column - 1  # 轉換為0-based索引
 					col_letter = self.get_excel_column_name(col_num)
 					cell_position = f"{col_letter}{row_num + 1}"
 
@@ -994,37 +936,21 @@ class SmartExcelMapper:
 						'position': cell_position,
 						'row': row_num,
 						'col': col_num,
-						'value': selection.Value
+						'value': cell.Value
 					})
-			elif platform.system() == "Darwin":
-				# macOS COM API
-				try:
-					cells = selection.cells.get()
-					for cell in cells:
-						row_num = cell.row.get() - 1
-						col_num = cell.column.get() - 1
-						col_letter = self.get_excel_column_name(col_num)
-						cell_position = f"{col_letter}{row_num + 1}"
+			except:
+				# 如果是單個儲存格
+				row_num = selection.Row - 1
+				col_num = selection.Column - 1
+				col_letter = self.get_excel_column_name(col_num)
+				cell_position = f"{col_letter}{row_num + 1}"
 
-						empty_cells.append({
-							'position': cell_position,
-							'row': row_num,
-							'col': col_num,
-							'value': cell.value.get()
-						})
-				except:
-					# 如果是單個儲存格
-					row_num = selection.row.get() - 1
-					col_num = selection.column.get() - 1
-					col_letter = self.get_excel_column_name(col_num)
-					cell_position = f"{col_letter}{row_num + 1}"
-
-					empty_cells.append({
-						'position': cell_position,
-						'row': row_num,
-						'col': col_num,
-						'value': selection.value.get()
-					})
+				empty_cells.append({
+					'position': cell_position,
+					'row': row_num,
+					'col': col_num,
+					'value': selection.Value
+				})
 
 			if not empty_cells:
 				messagebox.showwarning("警告", "未選取任何儲存格")
@@ -1044,7 +970,7 @@ class SmartExcelMapper:
 		self.empty_cells_info.delete(1.0, tk.END)
 
 		if not self.empty_cells:
-			self.empty_cells_info.insert(tk.END, "尚未掃描到可填入位置\n\n請點擊'掃描空格'")
+			self.empty_cells_info.insert(tk.END, "尚未掃描到可填入位置\n\n請點擊'獲取空格位置'")
 			return
 
 		first_keyword = self.first_keyword_var.get().strip()
@@ -1093,7 +1019,7 @@ class SmartExcelMapper:
 			return
 
 		if not self.empty_cells:
-			messagebox.showwarning("警告", "請先點擊'掃描空格'找到可填入的位置")
+			messagebox.showwarning("警告", "請先點擊'獲取空格位置'找到可填入的位置")
 			return
 
 		if len(selected_items) != len(self.empty_cells):
@@ -1159,11 +1085,7 @@ class SmartExcelMapper:
 
 					# 填入數據
 					if self.active_worksheet:
-						if platform.system() == "Windows":
-							self.active_worksheet.Cells(row_num, col_num).Value = numeric_value
-						elif platform.system() == "Darwin":
-							cell = self.active_worksheet.cells[row_num, col_num]
-							cell.value.set(numeric_value)
+						self.active_worksheet.Cells(row_num, col_num).Value = numeric_value
 					elif self.excel_sheet:
 						self.excel_sheet.cell(row=row_num, column=col_num, value=numeric_value)
 
@@ -1259,7 +1181,7 @@ class SmartExcelMapper:
 			self.new_config_var.set('')
 
 			# 提示用戶保存成功及模式
-			mode_text = "選取範圍模式" if use_selection_mode else "掃描空格模式"
+			mode_text = "選取範圍模式" if use_selection_mode else "獲取空格位置模式"
 			messagebox.showinfo("成功", f"配置 '{config_name}' 已保存\n模式: {mode_text}")
 		except Exception as e:
 			messagebox.showerror("錯誤", f"保存配置失敗：{str(e)}")
@@ -1297,7 +1219,7 @@ class SmartExcelMapper:
 					"請在Excel中選取要填入的儲存格範圍，\n"
 					"然後點擊「使用選取範圍」按鈕")
 			else:
-				# 掃描空格模式：自動掃描
+				# 獲取空格位置模式：自動掃描
 				self.scan_empty_cells()
 
 			# 自動選取CSV元素
@@ -1351,7 +1273,7 @@ class SmartExcelMapper:
 			# 檢查是否為選取範圍模式
 			use_selection_mode = config_data.get('use_selection_mode', False)
 
-			# 如果Excel已連接，且不是選取範圍模式，嘗試掃描空格
+			# 如果Excel已連接，且不是選取範圍模式，嘗試獲取空格位置
 			if (self.active_worksheet or self.excel_sheet) and not use_selection_mode:
 				try:
 					self.scan_empty_cells()
