@@ -11,7 +11,6 @@ import csv
 import json
 import os
 from openpyxl import load_workbook
-from openpyxl.styles import PatternFill
 import win32com.client
 
 
@@ -43,13 +42,12 @@ class SmartExcelMapper:
 
 		# 寫入配置
 		self.field_mappings = {}  # 存儲不同欄位的寫入配置
-		self.current_field = None
 		self.empty_cells = []  # 當前欄位的空格
 
 		# 初始化界面變量
 		self.config_var = tk.StringVar()
-		self.first_keyword_var = tk.StringVar()  # 第一個關鍵字
-		self.field_var = tk.StringVar()  # 第二個關鍵字
+		self.first_keyword_var = tk.StringVar()  # 定位列關鍵字
+		self.field_var = tk.StringVar()  # 目標欄位關鍵字
 		self.new_config_var = tk.StringVar()
 
 		# 建立寫入資料夾
@@ -95,7 +93,7 @@ class SmartExcelMapper:
 									style="Large.TButton")
 		self.csv_btn.pack(side=tk.LEFT, padx=(0, 10))
 
-		self.manual_connect_btn = ttk.Button(file_group, text="連接Excel", command=self.connect_excel, width=12,
+		self.manual_connect_btn = ttk.Button(file_group, text="連接Excel", command=self.connect_excel_windows, width=12,
 											style="Large.TButton")
 		# 預設不顯示，由toggle_connection_mode控制
 
@@ -117,10 +115,6 @@ class SmartExcelMapper:
 													value=False, command=self.toggle_connection_mode,
 													style="Large.TRadiobutton")
 		self.manual_radio.pack(side=tk.LEFT)
-
-		# 隱藏的Excel狀態（僅供內部使用）
-		self.excel_status = ttk.Label(mode_frame, text="正在嘗試連接Excel...", foreground="orange")
-		# 不要pack，保持隱藏狀態
 
 		# 寫入區域（右側）
 		execute_main_group = ttk.Frame(row1)
@@ -209,18 +203,18 @@ class SmartExcelMapper:
 		keyword_content = ttk.Frame(keyword_frame)
 		keyword_content.pack(fill=tk.X)
 
-		# 第一關鍵字
+		# 定位列
 		first_keyword_group = ttk.Frame(keyword_content)
 		first_keyword_group.pack(side=tk.LEFT, padx=(0, 30))
 
-		ttk.Label(first_keyword_group, text="第一關鍵字:", style="Large.TLabel").pack(side=tk.LEFT, padx=(0, 5))
+		ttk.Label(first_keyword_group, text="定位列 (Option):", style="Large.TLabel").pack(side=tk.LEFT, padx=(0, 5))
 		ttk.Entry(first_keyword_group, textvariable=self.first_keyword_var, width=25, font=('Arial', 10)).pack(side=tk.LEFT)
 
-		# 第二關鍵字
+		# 目標欄位
 		second_keyword_group = ttk.Frame(keyword_content)
 		second_keyword_group.pack(side=tk.LEFT)
 
-		ttk.Label(second_keyword_group, text="第二關鍵字:", style="Large.TLabel").pack(side=tk.LEFT, padx=(0, 5))
+		ttk.Label(second_keyword_group, text="目標欄位:", style="Large.TLabel").pack(side=tk.LEFT, padx=(0, 5))
 		ttk.Entry(second_keyword_group, textvariable=self.field_var, width=25, font=('Arial', 10)).pack(side=tk.LEFT)
 
 		# 第四行：獲取空格位置使用選取範圍區
@@ -553,7 +547,6 @@ class SmartExcelMapper:
 				self.active_worksheet = self.active_workbook.ActiveSheet
 
 				workbook_name = self.active_workbook.Name
-				self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
 				self.update_excel_name_display(workbook_name)
 				self.load_excel_data()
 			else:
@@ -581,28 +574,21 @@ class SmartExcelMapper:
 		try:
 			current_status = self.check_excel_status()
 
-			# 獲取當前顯示的狀態
-			current_display = self.excel_status.cget("text")
+			# 記錄上次的連接狀態，用於檢測狀態變化
+			if not hasattr(self, '_last_excel_status'):
+				self._last_excel_status = ""
 
 			# 如果狀態發生變化，更新顯示
-			if current_status != current_display:
+			if current_status != self._last_excel_status:
 				if current_status.startswith("已連接"):
 					# Excel重新連接，嘗試載入數據
-					if not current_display.startswith("已連接"):
+					if not self._last_excel_status.startswith("已連接"):
 						self.load_excel_data()
 						# 如果有配置，自動重新獲取空格位置
 						self.auto_rescan_on_reconnect()
-						print(f"Excel狀態變化: {current_display} → {current_status}")
+						print(f"Excel狀態變化: {self._last_excel_status} → {current_status}")
 
-				# 根據狀態設定顏色
-				if current_status.startswith("已連接"):
-					color = "green"
-				elif current_status.startswith("等待"):
-					color = "orange"
-				else:
-					color = "red"
-
-				self.excel_status.config(text=current_status, foreground=color)
+				self._last_excel_status = current_status
 
 		except Exception as e:
 			# 監控過程中的錯誤不要打擾用戶
@@ -610,6 +596,21 @@ class SmartExcelMapper:
 
 		# 每3秒檢查一次
 		self.root.after(3000, self.monitor_excel)
+
+	def reset_excel_interface(self):
+		"""重置Excel相關界面"""
+		# 清空空格位置
+		self.empty_cells = []
+
+		# 更新空格信息顯示
+		self.empty_cells_info.delete(1.0, tk.END)
+		self.empty_cells_info.insert(tk.END, "Excel已斷開連接\n\n請重新連接Excel")
+
+		# 更新空格數量
+		self.spaces_count_label.config(text="找到空格: 0 個")
+
+		# 更新匹配狀態
+		self.update_match_status()
 
 	def check_excel_status(self):
 		"""檢查Excel當前狀態"""
@@ -627,6 +628,10 @@ class SmartExcelMapper:
 				return f"已連接: {workbook_name}"
 			else:
 				# Excel開啟但沒有工作簿
+				if self.active_workbook is not None:
+					# 從有連接變成無工作簿，重置界面
+					self.reset_excel_interface()
+
 				self.active_workbook = None
 				self.active_worksheet = None
 				self.update_excel_name_display("無工作簿", "gray")
@@ -634,6 +639,10 @@ class SmartExcelMapper:
 
 		except:
 			# Excel未開啟或連接失敗
+			if self.active_workbook is not None:
+				# 從有連接變成斷開，重置界面
+				self.reset_excel_interface()
+
 			self.active_workbook = None
 			self.active_worksheet = None
 			self.update_excel_name_display("未連接", "gray")
@@ -643,31 +652,16 @@ class SmartExcelMapper:
 			else:
 				return "未連接Excel"
 
-		# 在自動模式下顯示等待，手動模式顯示未連接
-		if self.auto_detect_mode:
-			self.update_excel_name_display("等待中", "gray")
-			return "等待Excel開啟..."
-		else:
-			self.update_excel_name_display("未連接", "gray")
-			return "未連接Excel"
-
 	def auto_rescan_on_reconnect(self):
 		"""Excel重新連接時自動重新掃描"""
 		try:
-			# 檢查是否有選中的配置和目標欄位
-			current_config = self.config_var.get().strip()
+			# 檢查是否有目標欄位（有目標欄位就是關鍵字模式）
 			target_field = self.field_var.get().strip()
 
-			if current_config and target_field:
-				# 檢查是否為選取範圍模式
-				config_data = self.field_mappings.get(current_config, {})
-				use_selection_mode = config_data.get('use_selection_mode', False)
-
-				# 只有在非選取範圍模式下才自動掃描
-				if not use_selection_mode:
-					# 靜默重新獲取空格位置
-					self.scan_empty_cells()
-					print(f"Excel重新連接，已自動重新掃描欄位: {target_field}")
+			if target_field:
+				# 靜默重新獲取空格位置
+				self.scan_empty_cells()
+				print(f"Excel重新連接，已自動重新掃描欄位: {target_field}")
 
 		except Exception as e:
 			# 靜默處理錯誤
@@ -687,10 +681,6 @@ class SmartExcelMapper:
 			self.manual_connect_btn.pack(side=tk.LEFT)
 			self.update_excel_name_display("未連接", "gray")
 
-	def connect_excel(self):
-		"""手動連接Excel"""
-		self.connect_excel_windows()
-
 	def connect_excel_windows(self):
 		"""Windows連接"""
 		try:
@@ -704,7 +694,6 @@ class SmartExcelMapper:
 			self.active_worksheet = self.active_workbook.ActiveSheet
 
 			workbook_name = self.active_workbook.Name
-			self.excel_status.config(text=f"已連接: {workbook_name}", foreground="green")
 			self.update_excel_name_display(workbook_name)
 			self.load_excel_data()
 
@@ -735,7 +724,6 @@ class SmartExcelMapper:
 					# 使用活動的工作表
 					self.excel_sheet = self.excel_workbook.active
 					filename = os.path.basename(file_path)
-					self.excel_status.config(text=f"已載入: {filename}", foreground="blue")
 					self.update_excel_name_display(filename, "blue")
 					self.load_excel_data()
 				except Exception as e:
@@ -744,6 +732,10 @@ class SmartExcelMapper:
 	def load_excel_data(self):
 		"""載入Excel數據"""
 		try:
+			# 更新到當前的 ActiveSheet
+			if self.active_workbook:
+				self.active_worksheet = self.active_workbook.ActiveSheet
+
 			if self.active_worksheet:
 				# 從COM接口讀取
 				used_range = self.active_worksheet.UsedRange
@@ -770,8 +762,8 @@ class SmartExcelMapper:
 		return None
 
 	def find_second_keyword_in_column(self, first_row, col_idx, second_keyword):
-		"""在同一列中往下尋找第二個關鍵字"""
-		# 從第一個關鍵字的下一行開始往下找
+		"""在同一欄中往下尋找目標欄位"""
+		# 從定位列的下一行開始往下找
 		for row_idx in range(first_row + 1, len(self.excel_data)):
 			if col_idx < len(self.excel_data[row_idx]):
 				cell = self.excel_data[row_idx][col_idx]
@@ -843,47 +835,67 @@ class SmartExcelMapper:
 		second_keyword = self.field_var.get().strip()
 
 		if not second_keyword:
-			messagebox.showwarning("警告", "請輸入第二關鍵字")
+			messagebox.showwarning("警告", "請輸入目標欄位")
 			return
 
 		if not self.excel_data:
 			messagebox.showwarning("警告", "請先連接Excel")
 			return
 
+		# 更新到當前的 ActiveSheet 並重新載入數據
+		if self.active_workbook:
+			self.active_worksheet = self.active_workbook.ActiveSheet
+			self.load_excel_data()
+
 		try:
 			field_row = None
 			field_col = None
 
-			# 如果有第一個關鍵字，使用兩段定位
+			# 如果有定位列，使用兩段定位
 			if first_keyword:
-				# 1. 先找第一個關鍵字
+				# 1. 先找定位列
 				first_position = self.find_field_position(first_keyword)
 				if not first_position:
-					messagebox.showwarning("警告", f"找不到第一關鍵字: {first_keyword}")
+					# 清空之前的結果
+					self.empty_cells = []
+					self.display_empty_cells_info()
+					self.spaces_count_label.config(text="找到空格: 0 個")
+					self.update_match_status()
+					messagebox.showwarning("警告", f"找不到定位列: {first_keyword}")
 					return
 
 				first_row, first_col = first_position
 
-				# 2. 在同一列往下找第二個關鍵字
+				# 2. 在同一列往下找目標欄位
 				second_row = self.find_second_keyword_in_column(first_row, first_col, second_keyword)
 				if second_row is None:
+					# 清空之前的結果
+					self.empty_cells = []
+					self.display_empty_cells_info()
+					self.spaces_count_label.config(text="找到空格: 0 個")
+					self.update_match_status()
 					messagebox.showwarning("警告",
-						f"在第一關鍵字 '{first_keyword}' 的同一列中\n往下找不到第二關鍵字: {second_keyword}")
+						f"在定位列 '{first_keyword}' 的同一欄中\n往下找不到目標欄位: {second_keyword}")
 					return
 
 				field_row = second_row
 				field_col = first_col
 
 			else:
-				# 沒有第一個關鍵字，使用原來的邏輯（直接找第二個關鍵字）
+				# 沒有定位列，直接找目標欄位
 				field_position = self.find_field_position(second_keyword)
 				if not field_position:
-					messagebox.showwarning("警告", f"找不到第二關鍵字: {second_keyword}")
+					# 清空之前的結果
+					self.empty_cells = []
+					self.display_empty_cells_info()
+					self.spaces_count_label.config(text="找到空格: 0 個")
+					self.update_match_status()
+					messagebox.showwarning("警告", f"找不到目標欄位: {second_keyword}")
 					return
 
 				field_row, field_col = field_position
 
-			# 3. 在第二個關鍵字下方獲取空格位置
+			# 3. 在目標欄位下方獲取空格位置
 			empty_cells = self.scan_vertical_empty_cells(field_row, field_col)
 
 			if not empty_cells:
@@ -897,10 +909,10 @@ class SmartExcelMapper:
 			if not empty_cells:
 				if first_keyword:
 					messagebox.showwarning("警告",
-						f"在第二關鍵字 '{second_keyword}' 下方沒有找到空白位置")
+						f"在目標欄位 '{second_keyword}' 下方沒有找到空白位置")
 				else:
 					messagebox.showwarning("警告",
-						f"在關鍵字 '{second_keyword}' 下方沒有找到空白位置")
+						f"在目標欄位 '{second_keyword}' 下方沒有找到空白位置")
 
 		except Exception as e:
 			messagebox.showerror("錯誤", f"掃描失敗：{str(e)}")
@@ -912,6 +924,11 @@ class SmartExcelMapper:
 			return
 
 		try:
+			# 更新到當前的 ActiveSheet
+			if self.active_workbook:
+				self.active_worksheet = self.active_workbook.ActiveSheet
+				self.load_excel_data()
+
 			# 檢查是否有活動的工作表
 			if not self.active_worksheet:
 				messagebox.showwarning("警告", "此功能需要COM模式連接Excel\n請確認Excel已開啟並處於自動偵測模式")
@@ -977,10 +994,10 @@ class SmartExcelMapper:
 		second_keyword = self.field_var.get().strip()
 
 		if first_keyword:
-			self.empty_cells_info.insert(tk.END, f"第一關鍵字: {first_keyword}\n")
-			self.empty_cells_info.insert(tk.END, f"第二關鍵字: {second_keyword}\n")
+			self.empty_cells_info.insert(tk.END, f"定位列: {first_keyword}\n")
+			self.empty_cells_info.insert(tk.END, f"目標欄位: {second_keyword}\n")
 		else:
-			self.empty_cells_info.insert(tk.END, f"關鍵字: {second_keyword}\n")
+			self.empty_cells_info.insert(tk.END, f"目標欄位: {second_keyword}\n")
 
 		self.empty_cells_info.insert(tk.END, f"找到 {len(self.empty_cells)} 個位置:\n\n")
 
@@ -1041,12 +1058,12 @@ class SmartExcelMapper:
 
 		if first_keyword:
 			confirm_msg = (f"即將填入 {len(selected_items)} 個數據到Excel\n\n"
-				f"第一關鍵字: {first_keyword}\n"
-				f"第二關鍵字: {second_keyword}\n"
+				f"定位列: {first_keyword}\n"
+				f"目標欄位: {second_keyword}\n"
 				f"確定要執行嗎？")
 		else:
 			confirm_msg = (f"即將填入 {len(selected_items)} 個數據到Excel\n\n"
-				f"目標關鍵字: {second_keyword}\n"
+				f"目標欄位: {second_keyword}\n"
 				f"確定要執行嗎？")
 
 		result = messagebox.askyesno("確認執行", confirm_msg)
@@ -1118,12 +1135,12 @@ class SmartExcelMapper:
 			if first_keyword:
 				success_msg = (f"寫入完成！\n\n"
 					f"已成功填入 {filled_count} 個數據\n"
-					f"第一關鍵字: {first_keyword}\n"
-					f"第二關鍵字: {second_keyword}\n"
+					f"定位列: {first_keyword}\n"
+					f"目標欄位: {second_keyword}\n"
 					f"請檢查Excel文件確認結果")
 			else:
 				success_msg = (f"寫入完成！\n\n"
-					f"已成功填入 {filled_count} 個數據到關鍵字: {second_keyword}\n"
+					f"已成功填入 {filled_count} 個數據到目標欄位: {second_keyword}\n"
 					f"請檢查Excel文件確認結果")
 
 			messagebox.showinfo("成功", success_msg)
@@ -1150,6 +1167,20 @@ class SmartExcelMapper:
 			messagebox.showwarning("警告", "請輸入配置名稱或選擇現有配置")
 			return
 
+		# 檢查是否有目標欄位（必須有才能保存）
+		second_keyword = self.field_var.get().strip()
+
+		# 只允許保存關鍵字模式的配置（必須有目標欄位）
+		if not second_keyword:
+			messagebox.showwarning("無法保存配置",
+				"目前使用的是「手動選取儲存格」功能\n"
+				"此功能無法保存配置（因為每次選取的位置可能不同）\n\n"
+				"如需保存配置，請改用「獲取空格位置」功能：\n"
+				"1. 在「目標欄位」欄位輸入欄位名稱\n"
+				"2. 點擊「獲取空格位置」按鈕\n"
+				"3. 再保存配置")
+			return
+
 		# 只保存 element
 		selected_items = self.csv_tree.selection()
 		selected_elements = []
@@ -1159,15 +1190,10 @@ class SmartExcelMapper:
 				csv_row = self.csv_data[item_index]
 				selected_elements.append(csv_row.get('Element', ''))
 
-		# 判斷是否為使用選取範圍模式（沒有第二關鍵字但有空格）
-		second_keyword = self.field_var.get().strip()
-		use_selection_mode = (not second_keyword and len(self.empty_cells) > 0)
-
 		config_data = {
-			'first_keyword': self.first_keyword_var.get(),  # 保存第一個關鍵字
-			'field_name': self.field_var.get(),  # 第二個關鍵字
+			'first_keyword': self.first_keyword_var.get(),  # 保存定位列
+			'field_name': self.field_var.get(),  # 保存目標欄位
 			'selected_elements': selected_elements,
-			'use_selection_mode': use_selection_mode  # 標記是否為選取範圍模式
 		}
 
 		self.field_mappings[config_name] = config_data
@@ -1180,9 +1206,7 @@ class SmartExcelMapper:
 			self.config_var.set(config_name)
 			self.new_config_var.set('')
 
-			# 提示用戶保存成功及模式
-			mode_text = "選取範圍模式" if use_selection_mode else "獲取空格位置模式"
-			messagebox.showinfo("成功", f"配置 '{config_name}' 已保存\n模式: {mode_text}")
+			messagebox.showinfo("成功", f"配置 '{config_name}' 已保存")
 		except Exception as e:
 			messagebox.showerror("錯誤", f"保存配置失敗：{str(e)}")
 
@@ -1196,31 +1220,29 @@ class SmartExcelMapper:
 		try:
 			config_data = self.field_mappings[config_name]
 
-			# 加載第一個關鍵字（如果存在）
+			if not self.active_worksheet and not self.excel_sheet:
+				messagebox.showwarning("警告", "請先連接Excel，然後重新套用配置")
+				return
+
+			# 檢查配置是否有效（必須有目標欄位）
+			if 'field_name' not in config_data or not config_data['field_name']:
+				messagebox.showwarning("警告",
+					f"配置 '{config_name}' 無效或已過時\n\n"
+					"此配置缺少目標欄位信息，無法使用\n"
+					"請刪除此配置並重新創建")
+				return
+
+			# 加載定位列（如果存在）
 			if 'first_keyword' in config_data:
 				self.first_keyword_var.set(config_data['first_keyword'])
 			else:
 				self.first_keyword_var.set('')  # 舊配置可能沒有這個欄位
 
-			# 加載第二個關鍵字
+			# 加載目標欄位
 			self.field_var.set(config_data['field_name'])
 
-			if not self.active_worksheet and not self.excel_sheet:
-				messagebox.showwarning("警告", "請先連接Excel，然後重新套用配置")
-				return
-
-			# 檢查是否為選取範圍模式
-			use_selection_mode = config_data.get('use_selection_mode', False)
-
-			if use_selection_mode:
-				# 選取範圍模式：提示用戶手動選取範圍
-				messagebox.showinfo("提示",
-					f"配置 '{config_name}' 是使用選取範圍模式\n\n"
-					"請在Excel中選取要填入的儲存格範圍，\n"
-					"然後點擊「使用選取範圍」按鈕")
-			else:
-				# 獲取空格位置模式：自動掃描
-				self.scan_empty_cells()
+			# 自動掃描空格位置
+			self.scan_empty_cells()
 
 			# 自動選取CSV元素
 			if 'selected_elements' in config_data and self.csv_data:
@@ -1260,26 +1282,24 @@ class SmartExcelMapper:
 
 			config_data = self.field_mappings[current_config]
 
-			# 設定第一個關鍵字
-			if 'first_keyword' in config_data:
-				self.first_keyword_var.set(config_data['first_keyword'])
-			else:
-				self.first_keyword_var.set('')
+			# 檢查配置是否有效（有 field_name 就是有效的關鍵字模式配置）
+			if 'field_name' in config_data and config_data['field_name']:
+				# 設定定位列
+				if 'first_keyword' in config_data:
+					self.first_keyword_var.set(config_data['first_keyword'])
+				else:
+					self.first_keyword_var.set('')
 
-			# 設定第二個關鍵字
-			if 'field_name' in config_data:
+				# 設定目標欄位
 				self.field_var.set(config_data['field_name'])
 
-			# 檢查是否為選取範圍模式
-			use_selection_mode = config_data.get('use_selection_mode', False)
-
-			# 如果Excel已連接，且不是選取範圍模式，嘗試獲取空格位置
-			if (self.active_worksheet or self.excel_sheet) and not use_selection_mode:
-				try:
-					self.scan_empty_cells()
-				except:
-					# 掃描失敗時自動忽略
-					pass
+				# 如果Excel已連接，嘗試獲取空格位置
+				if self.active_worksheet or self.excel_sheet:
+					try:
+						self.scan_empty_cells()
+					except:
+						# 掃描失敗時自動忽略
+						pass
 
 			# 自動選中對應的CSV元素
 			if 'selected_elements' in config_data and self.csv_data:
